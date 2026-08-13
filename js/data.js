@@ -176,37 +176,6 @@ export function distinctGroups(records) {
   return [...new Set(records.map((r) => r.operatorGroup))].sort((a, b) => a.localeCompare(b));
 }
 
-/** Flags (year, month, operator, vertical, channel) combinations that appear
- * more than once — a common copy/paste slip when adding a month by hand,
- * and one that silently doubles totals for that period since every chart
- * sums whatever rows match the current filters. Returns null when clean. */
-export function findDuplicateRows(records) {
-  const groups = new Map();
-  for (const r of records) {
-    const k = `${r.key}__${r.operator}__${r.vertical}__${r.channel}`;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(r);
-  }
-  const dupGroups = [...groups.values()].filter((g) => g.length > 1);
-  if (dupGroups.length === 0) return null;
-
-  const monthCounts = new Map();
-  for (const g of dupGroups) {
-    const r0 = g[0];
-    const entry = monthCounts.get(r0.key) || { label: `${r0.monthName} ${r0.year}`, count: 0 };
-    entry.count += 1;
-    monthCounts.set(r0.key, entry);
-  }
-  const months = [...monthCounts.entries()]
-    .map(([key, v]) => ({ key, ...v }))
-    .sort((a, b) => b.count - a.count);
-
-  return {
-    groupCount: dupGroups.length,
-    rowCount: dupGroups.reduce((s, g) => s + g.length, 0),
-    months,
-  };
-}
 
 export function distinctVerticals(records) {
   const present = new Set(records.map((r) => r.vertical));

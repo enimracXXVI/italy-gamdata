@@ -237,11 +237,6 @@ button { font-family: inherit; }
   font-weight: 700;
   letter-spacing: -0.01em;
 }
-.app-header__subtitle {
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
 .app-header__actions {
   display: flex;
   align-items: center;
@@ -252,6 +247,31 @@ button { font-family: inherit; }
   font-size: 0.75rem;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.tab-nav {
+  display: inline-flex;
+  gap: var(--space-1);
+  background: var(--surface-page);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 3px;
+}
+.tab-nav__item {
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tab-nav__item:not(.tab-nav__item--active):hover { color: var(--text-primary); }
+.tab-nav__item--active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
 }
 
 .icon-button {
@@ -308,6 +328,13 @@ button { font-family: inherit; }
   flex-direction: column;
   gap: var(--space-6);
 }
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.tab-panel[hidden] { display: none; }
 
 .dashboard-section {
   display: flex;
@@ -821,7 +848,7 @@ button { font-family: inherit; }
   .filter-bar { position: static; }
   .kpi-row { grid-template-columns: repeat(2, 1fr); }
   .app-header { padding: var(--space-3) var(--space-4); }
-  .app-header__subtitle { display: none; }
+  .tab-nav__item { padding: 6px var(--space-2); font-size: 0.75rem; }
 }
 
 @media (max-width: 480px) {

@@ -2,10 +2,11 @@
 // bar, and re-render every chart/tile whenever the filter state changes.
 
 import {
-  loadRecords, distinctMonths, distinctOperators, distinctVerticals, findDuplicateRows, CHANNEL_ORDER,
+  loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
 } from "./data.js";
 import * as Agg from "./aggregate.js";
 import * as Charts from "./charts.js";
+import * as Quality from "./quality.js";
 import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js";
 
 const statusBanner = document.getElementById("status-banner");
@@ -62,6 +63,163 @@ function hideStatus() { statusBanner.hidden = true; }
 })();
 
 // ---------------------------------------------------------------------------
+// Tabs
+// ---------------------------------------------------------------------------
+function setupTabs() {
+  const dashboardBtn = document.getElementById("tab-btn-dashboard");
+  const qualityBtn = document.getElementById("tab-btn-quality");
+  const dashboardPanel = document.getElementById("tab-panel-dashboard");
+  const qualityPanel = document.getElementById("tab-panel-quality");
+  function activate(tab) {
+    const isDashboard = tab === "dashboard";
+    dashboardPanel.hidden = !isDashboard;
+    qualityPanel.hidden = isDashboard;
+    dashboardBtn.classList.toggle("tab-nav__item--active", isDashboard);
+    qualityBtn.classList.toggle("tab-nav__item--active", !isDashboard);
+  }
+  dashboardBtn.addEventListener("click", () => activate("dashboard"));
+  qualityBtn.addEventListener("click", () => activate("quality"));
+}
+
+// ---------------------------------------------------------------------------
+// Data Quality tab
+// ---------------------------------------------------------------------------
+const QUALITY_TABLE_CAP = 300;
+
+function emptyQualityNote(text) {
+  const p = document.createElement("p");
+  p.className = "chart-card__empty";
+  p.textContent = text;
+  return p;
+}
+
+function buildQualitySection(title, subtitle, tableEl) {
+  const section = document.createElement("section");
+  section.className = "dashboard-section";
+  const h2 = document.createElement("h2");
+  h2.className = "section-title";
+  h2.textContent = title;
+  const p = document.createElement("p");
+  p.className = "section-subtitle";
+  p.textContent = subtitle;
+  const card = document.createElement("div");
+  card.className = "chart-card";
+  card.appendChild(tableEl);
+  section.append(h2, p, card);
+  return section;
+}
+
+function renderQualityTab(checks) {
+  const root = document.getElementById("tab-panel-quality");
+  root.innerHTML = "";
+
+  const summary = document.createElement("section");
+  summary.className = "kpi-row";
+  const duplicateRowCount = checks.duplicates.reduce((s, g) => s + g.occurrences.length, 0);
+  const tiles = [
+    ["Duplicate rows", duplicateRowCount],
+    ["Extreme margin outliers", checks.extremeMargins.length],
+    ["Blank turnover, non-zero GGR", checks.blankTurnovers.length],
+    ["Operator naming inconsistencies", checks.groupInconsistencies.length],
+  ];
+  for (const [label, value] of tiles) {
+    const tile = document.createElement("div");
+    tile.className = "stat-tile";
+    const l = document.createElement("div"); l.className = "stat-tile__label"; l.textContent = label;
+    const v = document.createElement("div"); v.className = "stat-tile__value"; v.textContent = String(value);
+    tile.append(l, v);
+    summary.appendChild(tile);
+  }
+  root.appendChild(summary);
+
+  // --- Duplicate rows -------------------------------------------------
+  {
+    const rows = checks.duplicates.slice(0, QUALITY_TABLE_CAP).map((g) => [
+      g.monthLabel, g.operator, g.vertical, g.channel,
+      String(g.occurrences.length),
+      g.occurrences.map((o) => `${Charts.formatMoney(o.ggr)} / ${Charts.formatMoney(o.turnover)}`).join("   vs.   "),
+    ]);
+    const table = rows.length > 0
+      ? Charts.buildTable({
+          caption: checks.duplicates.length > QUALITY_TABLE_CAP
+            ? `Showing the ${QUALITY_TABLE_CAP} most recent of ${checks.duplicates.length} duplicate combos (${duplicateRowCount} rows total).`
+            : `${checks.duplicates.length} duplicate combo(s), ${duplicateRowCount} rows total.`,
+          columns: ["Month", "Operator", "Vertical", "Channel", "×", "GGR / Turnover per occurrence"],
+          rows,
+        })
+      : emptyQualityNote("None found — every (month, operator, vertical, channel) combination appears exactly once.");
+    root.appendChild(buildQualitySection(
+      "Duplicate rows",
+      "Same month + operator + vertical + channel entered more than once — the most common copy/paste slip, and it silently inflates totals for that period in every chart on the Dashboard tab.",
+      table
+    ));
+  }
+
+  // --- Extreme margins --------------------------------------------------
+  {
+    const rows = checks.extremeMargins.slice(0, QUALITY_TABLE_CAP).map((r) => [
+      r.monthLabel, r.operator, r.vertical, r.channel,
+      Charts.formatMoney(r.ggr), Charts.formatMoney(r.turnover), Charts.formatPercent(r.margin),
+    ]);
+    const table = rows.length > 0
+      ? Charts.buildTable({
+          caption: checks.extremeMargins.length > QUALITY_TABLE_CAP
+            ? `Showing the ${QUALITY_TABLE_CAP} most extreme of ${checks.extremeMargins.length} rows.`
+            : `${checks.extremeMargins.length} row(s).`,
+          columns: ["Month", "Operator", "Vertical", "Channel", "GGR", "Turnover", "Margin"],
+          rows,
+        })
+      : emptyQualityNote("None found — no row over €5,000 GGR has a margin beyond ±50%.");
+    root.appendChild(buildQualitySection(
+      "Extreme margins",
+      "GGR ÷ Turnover beyond ±50%, restricted to rows with at least €5,000 of GGR so a tiny operator's small-number noise doesn't drown out real typos (a missing digit on Turnover is the usual cause).",
+      table
+    ));
+  }
+
+  // --- Blank turnover -----------------------------------------------------
+  {
+    const rows = checks.blankTurnovers.slice(0, QUALITY_TABLE_CAP).map((r) => [
+      r.monthLabel, r.operator, r.vertical, r.channel, Charts.formatMoney(r.ggr),
+    ]);
+    const table = rows.length > 0
+      ? Charts.buildTable({
+          caption: checks.blankTurnovers.length > QUALITY_TABLE_CAP
+            ? `Showing the ${QUALITY_TABLE_CAP} most recent of ${checks.blankTurnovers.length} rows.`
+            : `${checks.blankTurnovers.length} row(s).`,
+          columns: ["Month", "Operator", "Vertical", "Channel", "GGR"],
+          rows,
+        })
+      : emptyQualityNote("None found — every row with GGR also has a Turnover value.");
+    root.appendChild(buildQualitySection(
+      "Blank Turnover with non-zero GGR",
+      "Not necessarily wrong — some operators genuinely don't report turnover for a channel — but it breaks margin math for that row, so worth a glance.",
+      table
+    ));
+  }
+
+  // --- Operator/Group naming inconsistencies -------------------------------
+  {
+    const rows = checks.groupInconsistencies.map((g) => [
+      g.operator,
+      g.variants.map((v) => `${v.name} (${v.count} rows, from ${v.firstSeen})`).join("   /   "),
+    ]);
+    const table = rows.length > 0
+      ? Charts.buildTable({
+          caption: `${rows.length} operator(s) with more than one Operator Group spelling.`,
+          columns: ["Operator", "Group names seen"],
+          rows,
+        })
+      : emptyQualityNote("None found — every operator maps to exactly one Operator Group.");
+    root.appendChild(buildQualitySection(
+      "Operator → Group naming inconsistencies",
+      "Splits one group's totals across two labels in the Operator group's rollups. Could be spelling drift (e.g. a dropped “S.R.L.”) or a genuine ownership change — worth a look either way.",
+      table
+    ));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 
@@ -79,14 +237,24 @@ async function boot() {
     return;
   }
 
-  const dupes = findDuplicateRows(records);
-  if (dupes) {
-    const top = dupes.months[0];
-    const restCount = dupes.months.length - 1;
+  const qualityChecks = Quality.runAllChecks(records);
+  renderQualityTab(qualityChecks);
+  setupTabs();
+
+  const dupeGroups = qualityChecks.duplicates;
+  if (dupeGroups.length > 0) {
+    const byMonth = new Map();
+    for (const g of dupeGroups) {
+      byMonth.set(g.monthLabel, (byMonth.get(g.monthLabel) || 0) + 1);
+    }
+    const months = [...byMonth.entries()].sort((a, b) => b[1] - a[1]);
+    const [topLabel, topCount] = months[0];
+    const restCount = months.length - 1;
+    const rowCount = dupeGroups.reduce((s, g) => s + g.occurrences.length, 0);
     const detail = restCount > 0
-      ? `Worst: ${top.label} has ${top.count} operator/vertical/channel combos entered more than once (plus smaller repeats in ${restCount} other month${restCount === 1 ? "" : "s"}). Totals for those months are inflated until the extra rows are removed from the sheet.`
-      : `${top.label} has ${top.count} operator/vertical/channel combos entered more than once. Totals for that month are inflated until the extra rows are removed from the sheet.`;
-    showStatus("warning", `Data quality: ${dupes.rowCount} duplicate rows found`, detail);
+      ? `Worst: ${topLabel} has ${topCount} operator/vertical/channel combos entered more than once (plus smaller repeats in ${restCount} other month${restCount === 1 ? "" : "s"}). Totals for those months are inflated until the extra rows are removed from the sheet. Full list on the Data Quality tab.`
+      : `${topLabel} has ${topCount} operator/vertical/channel combos entered more than once. Totals for that month are inflated until the extra rows are removed from the sheet. Full list on the Data Quality tab.`;
+    showStatus("warning", `Data quality: ${rowCount} duplicate rows found`, detail);
   } else {
     hideStatus();
   }
@@ -247,41 +415,65 @@ async function boot() {
     renderKPIs(filtered, months);
 
     // --- Market overview: trend by vertical -------------------------------
+    // With 2+ verticals selected this is a real composition breakdown. With
+    // exactly one vertical selected (the common case — "just Sportsbetting
+    // Online") a "breakdown by vertical" of a single vertical is a pointless
+    // 100%-one-color block, so it collapses to a plain total-trend line
+    // instead: same card, but showing something actually useful.
     {
-      const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
-        title: "Market trend by vertical",
-        caption: state.metric === "hold" ? "Blended margin % per vertical, per month."
-          : state.metric === "share" ? "Each vertical's % share of total GGR, per month — always sums to 100%."
-          : "Stacked monthly total across the selected verticals & channels.",
-      });
-      const groupMetric = state.metric === "share" ? "ggr" : state.metric;
-      const { series } = Agg.monthlySeries(filtered, months, "vertical", groupMetric, null);
-      series.sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
-      let colored = series.map((s) => ({ ...s, label: s.key, colorClass: Charts.verticalColorClass(s.key, verticalOrder) }));
-      if (state.metric === "share") colored = Agg.normalizeStackToShare(colored, months);
-      Charts.renderTimeSeriesChart(body, tableSlot, {
-        months, series: colored, metric: state.metric, stacked: state.metric !== "hold", seriesLabel: "Vertical",
-      });
+      const singleVertical = state.verticals.size === 1;
+      if (singleVertical) {
+        const [onlyVertical] = state.verticals;
+        const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
+          title: "Market trend",
+          caption: `Total ${Charts.METRIC_LABEL[state.metric === "share" ? "ggr" : state.metric]} for ${onlyVertical}, across the selected channel(s).`,
+        });
+        const basisMetric = state.metric === "share" ? "ggr" : state.metric;
+        const totals = Agg.totalsByMonth(filtered, months, basisMetric);
+        const series = [{ key: onlyVertical, label: onlyVertical, colorClass: Charts.verticalColorClass(onlyVertical, verticalOrder), values: totals }];
+        Charts.renderTimeSeriesChart(body, tableSlot, {
+          months, series, metric: basisMetric, stacked: true, seriesLabel: "Vertical",
+        });
+      } else {
+        const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
+          title: "Market trend by vertical",
+          caption: state.metric === "hold" ? "Blended margin % per vertical, per month."
+            : state.metric === "share" ? "Each vertical's % share of total GGR, per month — always sums to 100%."
+            : "Stacked monthly total across the selected verticals & channels.",
+        });
+        const groupMetric = state.metric === "share" ? "ggr" : state.metric;
+        const { series } = Agg.monthlySeries(filtered, months, "vertical", groupMetric, null);
+        series.sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
+        let colored = series.map((s) => ({ ...s, label: s.key, colorClass: Charts.verticalColorClass(s.key, verticalOrder) }));
+        if (state.metric === "share") colored = Agg.normalizeStackToShare(colored, months);
+        Charts.renderTimeSeriesChart(body, tableSlot, {
+          months, series: colored, metric: state.metric, stacked: state.metric !== "hold", seriesLabel: "Vertical",
+        });
+      }
     }
 
     // --- Market overview: operator share ------------------------------------
+    // Always a 100%-stacked composition view, regardless of the metric
+    // toggle — the card is titled "share", so it should always show share;
+    // GGR/Margin/Share all read as GGR-share here, Turnover reads as
+    // Turnover-share. (Absolute € trend already lives in the KPI tiles and
+    // the leaderboard; this chart's job is "how has the mix shifted".)
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.operatorShare, {
         title: "Operator share",
-        caption: state.metric === "share" ? "Top 7 operators' % share of total GGR, per month — always sums to 100%."
-          : "Top 7 operators by volume; smaller operators fold into “Other”.",
+        caption: `Top 7 operators' % share of total ${state.metric === "turnover" ? "Turnover" : "GGR"}, per month — always sums to 100%.`,
       });
-      const groupMetric = state.metric === "share" ? "ggr" : state.metric;
-      const topOperators = Agg.topKeysByTotal(filtered, "operator", groupMetric === "hold" ? "ggr" : groupMetric, 7);
+      const groupMetric = state.metric === "turnover" ? "turnover" : "ggr";
+      const topOperators = Agg.topKeysByTotal(filtered, "operator", groupMetric, 7);
       const { series } = Agg.monthlySeries(filtered, months, "operator", groupMetric, topOperators);
       const others = series.find((s) => s.key === "Other");
       const ranked = series.filter((s) => s.key !== "Other")
         .sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
       let colored = ranked.map((s) => ({ ...s, label: s.key, colorClass: Charts.operatorColorClass(s.key) }));
       if (others) colored.push({ ...others, label: "Other", colorClass: "series-other" });
-      if (state.metric === "share") colored = Agg.normalizeStackToShare(colored, months);
+      colored = Agg.normalizeStackToShare(colored, months);
       Charts.renderTimeSeriesChart(body, tableSlot, {
-        months, series: colored, metric: state.metric, stacked: state.metric !== "hold", seriesLabel: "Operator",
+        months, series: colored, metric: "share", stacked: true, seriesLabel: "Operator",
       });
     }
 
@@ -339,7 +531,7 @@ async function boot() {
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.compareIndexed, {
         title: "Compared operators vs. market",
-        caption: `Indexed to 100 at ${months[0] ? months[0].label : "the start of the range"} — a line above the dashed 100 mark is outgrowing the market, below is lagging it.`,
+        caption: `Indexed to 100 at ${months[0] ? months[0].label : "the start"} — the first month of whatever date range is selected above. A line above the dashed 100 mark is outgrowing the market since then, below is lagging it.`,
       });
       const selectedOps = [...state.operators];
       if (selectedOps.length === 0) {

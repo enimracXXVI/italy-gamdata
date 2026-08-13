@@ -13,7 +13,11 @@ browser, so editing the sheet is the entire workflow for adding new months.
 - `js/aggregate.js` — pure functions that turn raw rows into chart-ready data
 - `js/charts.js` — hand-rolled SVG chart rendering (line/area, bar, heatmap)
 - `js/components.js` — filter bar controls (multi-select, date range, toggle)
-- `js/app.js` — wires it all together
+- `js/quality.js` — scans the whole sheet for data-entry mistakes (duplicate
+  rows, implausible margins, missing turnover, inconsistent group naming);
+  feeds both the warning banner and the "Data Quality" tab
+- `js/app.js` — wires it all together, including the Dashboard ↔ Data
+  Quality tab switch
 
 ## What you need to do
 

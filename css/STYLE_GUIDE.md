@@ -56,16 +56,17 @@ vertical always gets the same color no matter what else is selected.
 |---|---|---|
 | `.app-header` | Sticky top bar | `index.html` `<header>` |
 | `.app-header__row` | Max-width flex row inside the header | same |
-| `.app-header__titles` | Wraps title + subtitle | same |
+| `.app-header__titles` | Wraps the `<h1>` | same |
 | `.app-header__title` | "Italy Gaming Market" | same |
-| `.app-header__subtitle` | Tagline, hidden under 860px | same |
+| `.tab-nav` / `.tab-nav__item` / `--active` | Dashboard ↔ Data Quality switcher in the header. Same `:not(--active):hover` scoping as the segmented control | header, `app.js` `setupTabs()` |
 | `.app-header__actions` | Right-side cluster (last-updated + theme button) | same |
 | `.app-header__updated` | "Data through …" text, hidden under 480px | same, set by `app.js` |
 | `.icon-button` / `.icon-button__glyph` | Circular theme-toggle button + its glyph span | header `#theme-toggle` |
-| `.status-banner` + `--loading` / `--error` / `--warning` | Fetch status / data-quality message above the filter bar (`--warning` is the duplicate-rows notice) | `app.js` `showStatus()` |
+| `.status-banner` + `--loading` / `--error` / `--warning` | Fetch status / data-quality message above the filter bar (`--warning` is the duplicate-rows notice, sourced from `js/quality.js`) | `app.js` `showStatus()` |
 | `.status-banner__title` | Bold first line of the banner | same |
-| `.app-main` | Centered column, holds every section | `index.html` `<main>` |
-| `.dashboard-section` | One titled block ("Market overview", "Operator compare") | same |
+| `.app-main` | Centered column, holds both tab panels | `index.html` `<main>` |
+| `.tab-panel` | One of the two top-level views (`#tab-panel-dashboard`, `#tab-panel-quality`); flex column with the section gap `.app-main` used to provide directly before the tabs existed | same |
+| `.dashboard-section` | One titled block ("Market overview", "Operator compare", and every Data Quality check) | same |
 | `.section-title` / `.section-subtitle` | Section heading + one-line description | same |
 
 ---

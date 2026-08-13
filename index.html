@@ -12,8 +12,11 @@
   <div class="app-header__row">
     <div class="app-header__titles">
       <h1 class="app-header__title">Italy Gaming Market</h1>
-      <p class="app-header__subtitle">ADM monthly market data &mdash; GGR &amp; Turnover by operator</p>
     </div>
+    <nav class="tab-nav" aria-label="View">
+      <button type="button" class="tab-nav__item tab-nav__item--active" id="tab-btn-dashboard" data-tab="dashboard">Dashboard</button>
+      <button type="button" class="tab-nav__item" id="tab-btn-quality" data-tab="quality">Data Quality</button>
+    </nav>
     <div class="app-header__actions">
       <span class="app-header__updated" id="last-updated"></span>
       <button type="button" class="icon-button" id="theme-toggle" aria-label="Toggle dark mode">
@@ -27,39 +30,47 @@
 
 <main class="app-main">
 
-  <section class="filter-bar" id="filter-bar" aria-label="Filters">
-    <!-- populated by js/app.js: date range, vertical select, channel select, operator compare select, metric toggle, reset -->
-  </section>
+  <div id="tab-panel-dashboard" class="tab-panel">
 
-  <section class="kpi-row" id="kpi-row" aria-label="Key metrics">
-    <!-- populated by js/app.js with .stat-tile elements -->
-  </section>
+    <section class="filter-bar" id="filter-bar" aria-label="Filters">
+      <!-- populated by js/app.js: date range, vertical select, channel select, operator compare select, metric toggle, reset -->
+    </section>
 
-  <section class="dashboard-section">
-    <h2 class="section-title">Market overview</h2>
-    <p class="section-subtitle">Total market volume across the filtered date range and channels, split by vertical.</p>
-    <div class="chart-grid chart-grid--2col">
-      <div class="chart-card" id="card-vertical-trend"></div>
-      <div class="chart-card" id="card-group-share"></div>
-    </div>
-    <div class="chart-grid chart-grid--1col">
-      <div class="chart-card" id="card-leaderboard"></div>
-    </div>
-  </section>
+    <section class="kpi-row" id="kpi-row" aria-label="Key metrics">
+      <!-- populated by js/app.js with .stat-tile elements -->
+    </section>
 
-  <section class="dashboard-section">
-    <h2 class="section-title">Operator compare</h2>
-    <p class="section-subtitle">Pick up to 6 operators in the filter bar above to trace their trend and break down their mix by vertical and channel.</p>
-    <div class="chart-grid chart-grid--1col">
-      <div class="chart-card" id="card-compare-trend"></div>
-    </div>
-    <div class="chart-grid chart-grid--1col">
-      <div class="chart-card" id="card-compare-indexed"></div>
-    </div>
-    <div class="chart-grid chart-grid--1col">
-      <div class="chart-card" id="card-compare-matrix"></div>
-    </div>
-  </section>
+    <section class="dashboard-section">
+      <h2 class="section-title">Market overview</h2>
+      <p class="section-subtitle">Total market volume across the filtered date range and channels, split by vertical.</p>
+      <div class="chart-grid chart-grid--2col">
+        <div class="chart-card" id="card-vertical-trend"></div>
+        <div class="chart-card" id="card-group-share"></div>
+      </div>
+      <div class="chart-grid chart-grid--1col">
+        <div class="chart-card" id="card-leaderboard"></div>
+      </div>
+    </section>
+
+    <section class="dashboard-section">
+      <h2 class="section-title">Operator compare</h2>
+      <p class="section-subtitle">Pick up to 6 operators in the filter bar above to trace their trend and break down their mix by vertical and channel.</p>
+      <div class="chart-grid chart-grid--1col">
+        <div class="chart-card" id="card-compare-trend"></div>
+      </div>
+      <div class="chart-grid chart-grid--1col">
+        <div class="chart-card" id="card-compare-indexed"></div>
+      </div>
+      <div class="chart-grid chart-grid--1col">
+        <div class="chart-card" id="card-compare-matrix"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <div id="tab-panel-quality" class="tab-panel" hidden>
+    <!-- populated by js/quality.js via app.js -->
+  </div>
 
 </main>
 
