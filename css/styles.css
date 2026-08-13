@@ -158,7 +158,39 @@
 }
 
 /* --------------------------------------------------------------------------
-   2. Reset & base
+   2. Series color utility classes
+   charts.js assigns exactly one of these per SVG mark/legend swatch instead
+   of ever writing a style="" attribute or an inline fill/stroke color.
+   Deliberately placed early: chart-type rules further down (e.g. .viz-line's
+   fill:none) must be able to override the fill/stroke set here for their
+   element type — CSS resolves same-specificity ties by source order, so
+   these single-purpose color classes have to load first.
+   -------------------------------------------------------------------------- */
+.series-1 { fill: var(--series-1); stroke: var(--series-1); }
+.series-2 { fill: var(--series-2); stroke: var(--series-2); }
+.series-3 { fill: var(--series-3); stroke: var(--series-3); }
+.series-4 { fill: var(--series-4); stroke: var(--series-4); }
+.series-5 { fill: var(--series-5); stroke: var(--series-5); }
+.series-6 { fill: var(--series-6); stroke: var(--series-6); }
+.series-7 { fill: var(--series-7); stroke: var(--series-7); }
+.series-8 { fill: var(--series-8); stroke: var(--series-8); }
+.series-other { fill: var(--series-other); stroke: var(--series-other); }
+
+.seq-100 { fill: var(--seq-100); }
+.seq-200 { fill: var(--seq-200); }
+.seq-300 { fill: var(--seq-300); }
+.seq-400 { fill: var(--seq-400); }
+.seq-500 { fill: var(--seq-500); }
+.seq-600 { fill: var(--seq-600); }
+.seq-700 { fill: var(--seq-700); }
+
+/* light-on-dark vs dark-on-light label ink for heatmap cells, chosen per
+   cell by charts.js based on the cell's sequential step */
+.cell-ink-light { fill: #ffffff; }
+.cell-ink-dark { fill: var(--text-primary); }
+
+/* --------------------------------------------------------------------------
+   3. Reset & base
    -------------------------------------------------------------------------- */
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -177,7 +209,7 @@ h1, h2, h3, p { margin: 0; }
 button { font-family: inherit; }
 
 /* --------------------------------------------------------------------------
-   3. Header
+   4. Header
    -------------------------------------------------------------------------- */
 .app-header {
   background: var(--surface-card);
@@ -235,7 +267,7 @@ button { font-family: inherit; }
 .icon-button__glyph { font-size: 1rem; line-height: 1; }
 
 /* --------------------------------------------------------------------------
-   4. Status banner (loading / error state for the CSV fetch)
+   5. Status banner (loading / error state for the CSV fetch)
    -------------------------------------------------------------------------- */
 .status-banner {
   max-width: 1400px;
@@ -262,7 +294,7 @@ button { font-family: inherit; }
 .status-banner__title { font-weight: 700; margin-bottom: 2px; }
 
 /* --------------------------------------------------------------------------
-   5. Main layout
+   6. Main layout
    -------------------------------------------------------------------------- */
 .app-main {
   max-width: 1400px;
@@ -289,7 +321,7 @@ button { font-family: inherit; }
 }
 
 /* --------------------------------------------------------------------------
-   6. Filter bar
+   7. Filter bar
    One left-aligned row above the content it scopes (dataviz interaction rule).
    Wraps to multiple rows on narrow viewports rather than scrolling sideways.
    -------------------------------------------------------------------------- */
@@ -495,7 +527,7 @@ button { font-family: inherit; }
 .filter-reset:hover { color: var(--text-primary); text-decoration: underline; }
 
 /* --------------------------------------------------------------------------
-   7. KPI row / stat tiles
+   8. KPI row / stat tiles
    -------------------------------------------------------------------------- */
 .kpi-row {
   display: grid;
@@ -543,7 +575,7 @@ button { font-family: inherit; }
 }
 
 /* --------------------------------------------------------------------------
-   8. Chart cards + grid
+   9. Chart cards + grid
    Fixed-height rule: any fixed height on a card includes the axis band so
    the card body never scrolls vertically on its own.
    -------------------------------------------------------------------------- */
@@ -606,7 +638,7 @@ button { font-family: inherit; }
 }
 
 /* --------------------------------------------------------------------------
-   9. SVG chart internals
+   10. SVG chart internals
    -------------------------------------------------------------------------- */
 .viz-svg { width: 100%; height: auto; display: block; overflow: visible; }
 .viz-svg--fixed { width: auto; max-width: 100%; }
@@ -671,7 +703,7 @@ button { font-family: inherit; }
 .viz-heatmap-col-label { font-size: 11px; fill: var(--text-secondary); text-anchor: middle; }
 
 /* --------------------------------------------------------------------------
-   10. Legend
+   11. Legend
    -------------------------------------------------------------------------- */
 .viz-legend {
   display: flex;
@@ -701,7 +733,7 @@ button { font-family: inherit; }
 .viz-legend-swatch--line { width: 12px; height: 2px; border-radius: 1px; }
 
 /* --------------------------------------------------------------------------
-   11. Tooltip
+   12. Tooltip
    -------------------------------------------------------------------------- */
 .tooltip {
   position: fixed;
@@ -749,7 +781,7 @@ button { font-family: inherit; }
 }
 
 /* --------------------------------------------------------------------------
-   12. Table view (accessibility twin of every chart)
+   13. Table view (accessibility twin of every chart)
    -------------------------------------------------------------------------- */
 .viz-table-wrap { overflow-x: auto; }
 .viz-table {
@@ -793,34 +825,6 @@ button { font-family: inherit; }
   .stat-tile__value { font-size: 1.5rem; }
   .app-header__updated { display: none; }
 }
-
-/* --------------------------------------------------------------------------
-   15. Series color utility classes
-   charts.js assigns exactly one of these per SVG mark/legend swatch instead
-   of ever writing a style="" attribute or an inline fill/stroke color.
-   -------------------------------------------------------------------------- */
-.series-1 { fill: var(--series-1); stroke: var(--series-1); }
-.series-2 { fill: var(--series-2); stroke: var(--series-2); }
-.series-3 { fill: var(--series-3); stroke: var(--series-3); }
-.series-4 { fill: var(--series-4); stroke: var(--series-4); }
-.series-5 { fill: var(--series-5); stroke: var(--series-5); }
-.series-6 { fill: var(--series-6); stroke: var(--series-6); }
-.series-7 { fill: var(--series-7); stroke: var(--series-7); }
-.series-8 { fill: var(--series-8); stroke: var(--series-8); }
-.series-other { fill: var(--series-other); stroke: var(--series-other); }
-
-.seq-100 { fill: var(--seq-100); }
-.seq-200 { fill: var(--seq-200); }
-.seq-300 { fill: var(--seq-300); }
-.seq-400 { fill: var(--seq-400); }
-.seq-500 { fill: var(--seq-500); }
-.seq-600 { fill: var(--seq-600); }
-.seq-700 { fill: var(--seq-700); }
-
-/* light-on-dark vs dark-on-light label ink for heatmap cells, chosen per
-   cell by charts.js based on the cell's sequential step */
-.cell-ink-light { fill: #ffffff; }
-.cell-ink-dark { fill: var(--text-primary); }
 
 .delta-glyph-up::before { content: "\25B2"; }
 .delta-glyph-down::before { content: "\25BC"; }
