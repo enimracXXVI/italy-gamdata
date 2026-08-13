@@ -152,6 +152,7 @@ async function boot() {
         { key: "ggr", label: "GGR" },
         { key: "turnover", label: "Turnover" },
         { key: "hold", label: "Margin %" },
+        { key: "share", label: "Market Share %" },
       ],
       selected: { value: state.metric },
       onChange: (key) => { state.metric = key; render(); },
@@ -205,12 +206,14 @@ async function boot() {
     const totalTurnover = Agg.sum(filtered, "turnover");
     const blendedMargin = Agg.sum(filtered, "hold");
     const operatorCount = new Set(filtered.map((r) => r.operator)).size;
-    const yoyPct = yoyPercent(filtered, months, state.metric);
+    // Always GGR-based regardless of the metric toggle — "share" and "index"
+    // aren't quantities you can take a year-over-year delta of the same way.
+    const yoyPct = yoyPercent(filtered, months, "ggr");
 
     addTile("Total GGR", Charts.formatMetric(totalGGR, "ggr"), momPercent(filtered, months, "ggr"), "MoM", true);
     addTile("Total Turnover", Charts.formatMetric(totalTurnover, "turnover"), momPercent(filtered, months, "turnover"), "MoM", true);
     addTile("Blended margin", Charts.formatMetric(blendedMargin, "hold"), momPercent(filtered, months, "hold"), "MoM", true);
-    addTile(`Year over year (${Charts.METRIC_LABEL[state.metric]})`, yoyPct === null ? "—" : `${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%`, yoyPct, "vs same month last year", true);
+    addTile("Year over year (GGR)", yoyPct === null ? "—" : `${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%`, yoyPct, "vs same month last year", true);
     addTile("Operators in view", String(operatorCount), null, "", false);
   }
 
@@ -247,11 +250,15 @@ async function boot() {
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
         title: "Market trend by vertical",
-        caption: state.metric === "hold" ? "Blended margin % per vertical, per month." : "Stacked monthly total across the selected verticals & channels.",
+        caption: state.metric === "hold" ? "Blended margin % per vertical, per month."
+          : state.metric === "share" ? "Each vertical's % share of total GGR, per month — always sums to 100%."
+          : "Stacked monthly total across the selected verticals & channels.",
       });
-      const { series } = Agg.monthlySeries(filtered, months, "vertical", state.metric, null);
+      const groupMetric = state.metric === "share" ? "ggr" : state.metric;
+      const { series } = Agg.monthlySeries(filtered, months, "vertical", groupMetric, null);
       series.sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
-      const colored = series.map((s) => ({ ...s, label: s.key, colorClass: Charts.verticalColorClass(s.key, verticalOrder) }));
+      let colored = series.map((s) => ({ ...s, label: s.key, colorClass: Charts.verticalColorClass(s.key, verticalOrder) }));
+      if (state.metric === "share") colored = Agg.normalizeStackToShare(colored, months);
       Charts.renderTimeSeriesChart(body, tableSlot, {
         months, series: colored, metric: state.metric, stacked: state.metric !== "hold", seriesLabel: "Vertical",
       });
@@ -261,15 +268,18 @@ async function boot() {
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.operatorShare, {
         title: "Operator share",
-        caption: "Top 7 operators by volume; smaller operators fold into “Other”.",
+        caption: state.metric === "share" ? "Top 7 operators' % share of total GGR, per month — always sums to 100%."
+          : "Top 7 operators by volume; smaller operators fold into “Other”.",
       });
-      const topOperators = Agg.topKeysByTotal(filtered, "operator", state.metric === "hold" ? "ggr" : state.metric, 7);
-      const { series } = Agg.monthlySeries(filtered, months, "operator", state.metric, topOperators);
+      const groupMetric = state.metric === "share" ? "ggr" : state.metric;
+      const topOperators = Agg.topKeysByTotal(filtered, "operator", groupMetric === "hold" ? "ggr" : groupMetric, 7);
+      const { series } = Agg.monthlySeries(filtered, months, "operator", groupMetric, topOperators);
       const others = series.find((s) => s.key === "Other");
       const ranked = series.filter((s) => s.key !== "Other")
         .sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
-      const colored = ranked.map((s) => ({ ...s, label: s.key, colorClass: Charts.operatorColorClass(s.key) }));
+      let colored = ranked.map((s) => ({ ...s, label: s.key, colorClass: Charts.operatorColorClass(s.key) }));
       if (others) colored.push({ ...others, label: "Other", colorClass: "series-other" });
+      if (state.metric === "share") colored = Agg.normalizeStackToShare(colored, months);
       Charts.renderTimeSeriesChart(body, tableSlot, {
         months, series: colored, metric: state.metric, stacked: state.metric !== "hold", seriesLabel: "Operator",
       });
@@ -279,9 +289,19 @@ async function boot() {
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.leaderboard, {
         title: "Operator leaderboard",
-        caption: "Top 15 operators over the selected range. Operators picked in “Compare operators” are highlighted.",
+        caption: state.metric === "share"
+          ? "Each operator's % share of total GGR over the selected range, after the vertical/channel filters above."
+          : "Top 15 operators over the selected range. Operators picked in “Compare operators” are highlighted.",
       });
-      const items = Agg.leaderboard(filtered, state.metric, 15);
+      let items;
+      if (state.metric === "share") {
+        const marketGGR = Agg.sum(filtered, "ggr");
+        items = Agg.leaderboard(filtered, "ggr", 15).map((it) => ({
+          operator: it.operator, value: marketGGR ? (it.value / marketGGR) * 100 : 0,
+        }));
+      } else {
+        items = Agg.leaderboard(filtered, state.metric, 15);
+      }
       const emphasisMap = new Map([...state.operators].map((o) => [o, Charts.operatorColorClass(o)]));
       Charts.renderBarChart(body, tableSlot, { items, metric: state.metric, emphasisMap });
     }
@@ -290,12 +310,22 @@ async function boot() {
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.compareTrend, {
         title: "Compared operators — trend",
-        caption: "Sums GGR/Turnover across whatever verticals & channels are selected above.",
+        caption: state.metric === "share"
+          ? "Each operator's % share of total GGR, per month, within whatever verticals & channels are selected above."
+          : "Sums GGR/Turnover across whatever verticals & channels are selected above.",
       });
       const selectedOps = [...state.operators];
       if (selectedOps.length === 0) {
         Charts.emptyState(body, "Select up to 6 operators in “Compare operators” above to trace their trend here.");
         tableSlot.innerHTML = "";
+      } else if (state.metric === "share") {
+        const marketTotals = Agg.totalsByMonth(filtered, months, "ggr");
+        const series = Agg.operatorTrend(filtered, months, selectedOps, "ggr").map((s) => ({
+          key: s.key, label: s.key, colorClass: Charts.operatorColorClass(s.key), values: Agg.shareSeries(s.values, marketTotals),
+        }));
+        Charts.renderTimeSeriesChart(body, tableSlot, {
+          months, series, metric: "share", stacked: false, seriesLabel: "Operator",
+        });
       } else {
         const series = Agg.operatorTrend(filtered, months, selectedOps, state.metric)
           .map((s) => ({ ...s, label: s.key, colorClass: Charts.operatorColorClass(s.key) }));
@@ -316,9 +346,14 @@ async function boot() {
         Charts.emptyState(body, "Select up to 6 operators above to see whether they're outgrowing or lagging the overall market.");
         tableSlot.innerHTML = "";
       } else {
-        const marketTotals = Agg.totalsByMonth(filtered, months, state.metric);
+        // "Share" and "index" are both already relative — indexing a share
+        // doesn't add information, so this chart always indexes the
+        // underlying GGR/Turnover/Margin growth (GGR when the toggle is on
+        // Market Share %, since that's what share is a share of).
+        const basisMetric = state.metric === "share" ? "ggr" : state.metric;
+        const marketTotals = Agg.totalsByMonth(filtered, months, basisMetric);
         const marketSeries = { key: "Market", label: "Market (all operators)", colorClass: "series-other", values: Agg.indexSeries(marketTotals) };
-        const opSeries = Agg.operatorTrend(filtered, months, selectedOps, state.metric).map((s) => ({
+        const opSeries = Agg.operatorTrend(filtered, months, selectedOps, basisMetric).map((s) => ({
           key: s.key, label: s.key, colorClass: Charts.operatorColorClass(s.key), values: Agg.indexSeries(s.values),
         }));
         Charts.renderTimeSeriesChart(body, tableSlot, {
@@ -331,12 +366,16 @@ async function boot() {
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.compareMatrix, {
         title: "Compared operators — vertical × channel breakdown",
-        caption: "Totals over the selected date range, after the vertical/channel filters above.",
+        caption: state.metric === "share"
+          ? "Each operator's % share of GGR within that exact vertical × channel slice, e.g. their share of Sportsbetting/Online specifically."
+          : "Totals over the selected date range, after the vertical/channel filters above.",
       });
       const selectedOps = [...state.operators];
       const panels = selectedOps.map((op) => ({
         operator: op,
-        ...Agg.compareMatrix(filtered, op, verticalOrder, channelOrder, state.metric),
+        ...(state.metric === "share"
+          ? Agg.shareMatrix(filtered, op, verticalOrder, channelOrder)
+          : Agg.compareMatrix(filtered, op, verticalOrder, channelOrder, state.metric)),
       }));
       Charts.renderHeatmapGrid(body, tableSlot, { panels, metric: state.metric });
     }

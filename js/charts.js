@@ -37,6 +37,17 @@ function seqClassForRatio(ratio) {
   const i = Math.max(0, Math.min(SEQ_CLASSES.length - 1, Math.round(ratio * (SEQ_CLASSES.length - 1))));
   return SEQ_CLASSES[i];
 }
+/** Money metrics (GGR/Turnover) often have one dominant vertical dwarfing the
+ * rest — a linear ratio crushes every other cell to the palest step next to
+ * it, which reads as "one dark cell, everything else blank". Log-scale the
+ * ratio so mid-size cells stay visually distinct. Bounded metrics (margin %,
+ * share %) are already well-distributed, so they stay linear. */
+function heatmapRatio(value, max, metric) {
+  if (value === null || value === undefined || !max) return 0;
+  const v = Math.max(0, value);
+  if (metric === "hold" || metric === "share") return v / max;
+  return Math.log(v + 1) / Math.log(max + 1);
+}
 function inkClassForSeqIndex(seqClass) {
   // steps 500/600/700 are dark enough to need white ink on the cell
   return ["seq-500", "seq-600", "seq-700"].includes(seqClass) ? "cell-ink-light" : "cell-ink-dark";
@@ -62,10 +73,12 @@ export function formatPercent(n) {
   return `${(n * 100).toFixed(2)}%`;
 }
 export function formatMetric(value, metric) {
-  if (metric === "index") return value === null || value === undefined || Number.isNaN(value) ? "—" : value.toFixed(1);
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (metric === "index") return value.toFixed(1);
+  if (metric === "share") return `${value.toFixed(1)}%`;
   return metric === "hold" ? formatPercent(value) : formatMoney(value);
 }
-export const METRIC_LABEL = { ggr: "GGR", turnover: "Turnover", hold: "Margin %", index: "Index (start = 100)" };
+export const METRIC_LABEL = { ggr: "GGR", turnover: "Turnover", hold: "Margin %", index: "Index (start = 100)", share: "Market share %" };
 
 // ---------------------------------------------------------------------------
 // DOM/SVG helpers
@@ -298,6 +311,12 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
     const pad = Math.max(5, (dataMax - dataMin) * 0.2);
     yMin = Math.floor((dataMin - pad) / 10) * 10;
     yMax = Math.ceil((dataMax + pad) / 10) * 10;
+  } else if (metric === "share" && stacked) {
+    // A 100%-stacked share chart sums to exactly 100 by construction
+    // (normalizeStackToShare) — pin the axis rather than let floating-point
+    // summation noise (100.00000000001) trip niceMax's ">1" rounding
+    // threshold and double it to 200.
+    yMax = 100;
   } else {
     const stackedTotals = months.map((_, i) => series.reduce((acc, s) => acc + (s.values[i] || 0), 0));
     const rawMax = stacked ? Math.max(...stackedTotals) : Math.max(...series.flatMap((s) => s.values));
@@ -554,8 +573,7 @@ export function renderHeatmapGrid(body, tableSlot, { panels, metric }) {
 
       cols.forEach((c, ci) => {
         const value = matrix[ri][ci];
-        const ratio = metric === "hold" ? (value || 0) / (max || 1) : (value || 0) / max;
-        const seqClass = value === null || value === undefined ? "seq-100" : seqClassForRatio(ratio);
+        const seqClass = value === null || value === undefined ? "seq-100" : seqClassForRatio(heatmapRatio(value, max, metric));
         const x = rowLabelW + ci * cellW;
         const y = colHeaderH + ri * cellH;
         const cell = svgEl("rect", { x, y, width: cellW, height: cellH }, `viz-cell ${seqClass}`);

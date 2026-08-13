@@ -186,8 +186,12 @@
 
 /* light-on-dark vs dark-on-light label ink for heatmap cells, chosen per
    cell by charts.js based on the cell's sequential step */
+/* Fixed (non-theme) hex on purpose: these pick ink against the cell's own
+   fill color, which stays the same across light/dark page themes, so the
+   ink choice must not flip with --text-primary or it collapses to
+   white-on-white in dark mode. */
 .cell-ink-light { fill: #ffffff; }
-.cell-ink-dark { fill: var(--text-primary); }
+.cell-ink-dark { fill: #0b0b0b; }
 
 /* --------------------------------------------------------------------------
    3. Reset & base

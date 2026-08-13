@@ -80,7 +80,7 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-bar` | The sticky row container itself |
 | `.filter-control` | Positioning wrapper around one trigger + its popover |
 | `.filter-trigger` | The pill button you click to open a filter ("Vertical ▾") |
-| `.filter-trigger--active` | Applied while that control's popover is open |
+| `.filter-trigger--active` | Applied while that control's popover is open. Same `:not(.filter-trigger--active):hover` scoping as the segmented control, for the same reason |
 | `.filter-trigger__count` | Small numeric badge on the trigger (e.g. "6") |
 | `.filter-trigger__chevron` | The ▾ glyph |
 | `.filter-popover` / `--wide` | The dropdown panel; `--wide` variant for the operator picker (has a meta column) |
@@ -98,7 +98,7 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-preset__check` | The ✓ mark, visible only on `.filter-preset--selected` |
 | `.filter-preset-custom` | Footer row holding the two custom month `<select>`s |
 | `.filter-date-select` | Each of those two `<select>` elements |
-| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % toggle |
+| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click |
 | `.filter-reset` | "Reset filters" text button, right-aligned |
 
 ---
@@ -157,7 +157,7 @@ and scales via CSS width, so one code path serves desktop and mobile.
 | `.viz-cell` | One heatmap cell (vertical × channel) |
 | `.viz-cell-label` | The value text inside a cell |
 | `.viz-heatmap-row-label` / `-col-label` | Row (vertical) / column (channel) headers on a heatmap |
-| `.cell-ink-light` / `.cell-ink-dark` | Chooses white vs. dark text inside a heatmap cell so it stays readable against that cell's fill (picked per-cell in `charts.js` from the cell's `seq-*` step) |
+| `.cell-ink-light` / `.cell-ink-dark` | Chooses white vs. dark text inside a heatmap cell so it stays readable against that cell's fill (picked per-cell in `charts.js` from the cell's `seq-*` step). Both are **fixed hex, not theme tokens** — `cell-ink-dark` used to read `var(--text-primary)`, which is white in dark mode, so on a pale cell both "dark ink" and "light ink" rendered white-on-white; it's hardcoded to `#0b0b0b` now |
 
 ---
 
@@ -197,7 +197,13 @@ Assignment logic (in `charts.js`):
 
 **Sequential** (`seq-100` … `seq-700`) — magnitude, one hue (blue), light→dark.
 Used only by the vertical × channel heatmap; a cell's value is bucketed into
-one of the 7 steps relative to that operator's own max value.
+one of the 7 steps relative to that operator's own max value in the panel.
+For GGR/Turnover this bucketing is **log-scaled** (`heatmapRatio()` in
+`charts.js`), not linear — one dominant vertical is common (e.g. Sportsbetting
+massively outweighing Poker for most operators), and a linear ratio crushes
+every smaller cell to the palest step, reading as "one dark cell, rest blank".
+Margin % and Market Share % stay linear since they're already bounded 0–100
+and don't have that long-tail problem.
 
 | Class | Hex |
 |---|---|

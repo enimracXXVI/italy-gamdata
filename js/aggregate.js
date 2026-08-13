@@ -149,6 +149,44 @@ export function compareMatrix(records, operator, verticalOrder, channelOrder, me
   return { rows, cols, matrix };
 }
 
+/** Vertical x Channel matrix of one operator's % share of GGR within that
+ * exact slice — e.g. "DAZNBET's share of Sportsbetting/Online GGR". `records`
+ * should already be date/vertical/channel-filtered but NOT operator-filtered,
+ * so the denominator is the whole market for that cell. Cells with no market
+ * volume at all come back null (rendered as "—"), not a divide-by-zero 0. */
+export function shareMatrix(records, operator, verticalOrder, channelOrder) {
+  const rows = verticalOrder.filter((v) => records.some((r) => r.vertical === v));
+  const cols = channelOrder.filter((c) => records.some((r) => r.channel === c));
+  const matrix = rows.map((v) =>
+    cols.map((c) => {
+      const cell = records.filter((r) => r.vertical === v && r.channel === c);
+      const marketTotal = sum(cell, "ggr");
+      if (!marketTotal) return null;
+      const opTotal = sum(cell.filter((r) => r.operator === operator), "ggr");
+      return (opTotal / marketTotal) * 100;
+    })
+  );
+  return { rows, cols, matrix };
+}
+
+/** Elementwise a/b*100, month by month — turns two absolute series (an
+ * operator's totals and the whole market's totals) into a % share trend. */
+export function shareSeries(values, totals) {
+  return values.map((v, i) => (totals[i] ? (v / totals[i]) * 100 : null));
+}
+
+/** Normalizes a set of stacked series so every month sums to 100 — turns an
+ * absolute stacked-area chart into a 100%-stacked composition/share view. */
+export function normalizeStackToShare(series, months) {
+  return series.map((s) => ({
+    ...s,
+    values: months.map((_, i) => {
+      const monthTotal = series.reduce((acc, ss) => acc + (ss.values[i] || 0), 0);
+      return monthTotal ? (s.values[i] / monthTotal) * 100 : 0;
+    }),
+  }));
+}
+
 /** Rebases a value series to 100 at its first non-zero point, so an operator
  * and the overall market can be compared on the same axis regardless of
  * their actual size — "is this operator growing faster than the market?" */
