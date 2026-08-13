@@ -1,0 +1,830 @@
+/* ==========================================================================
+   Italy Gaming Market Dashboard — stylesheet
+   Every rule targets a class (no inline styles anywhere in the JS/HTML).
+   Full class-by-class + color-by-color documentation lives in STYLE_GUIDE.md
+   next to this file — keep the two in sync when editing.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Design tokens (CSS custom properties)
+   Light values on :root; dark values re-declared under the OS media query
+   (guarded so an explicit light choice wins) and again under [data-theme=dark]
+   (so the in-page toggle wins both ways). See STYLE_GUIDE.md "Color tokens".
+   -------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  /* surfaces */
+  --surface-page:   #f9f9f7;
+  --surface-card:   #fcfcfb;
+  --surface-raised: #ffffff;
+
+  /* ink */
+  --text-primary:   #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted:     #898781;
+
+  /* chrome */
+  --border-hairline: rgba(11,11,11,0.10);
+  --grid-line:        #e1e0d9;
+  --axis-line:         #c3c2b7;
+  --focus-ring:        #2a78d6;
+
+  /* delta text (KPI up/down) */
+  --delta-good: #006300;
+  --delta-bad:  #d03b3b;
+
+  /* status (fixed, reserved meaning — never reused for series identity) */
+  --status-good:     #0ca30c;
+  --status-warning:  #fab219;
+  --status-serious:  #ec835a;
+  --status-critical: #d03b3b;
+
+  /* categorical series — fixed hue order, assign in sequence, never cycle */
+  --series-1: #2a78d6; /* blue    */
+  --series-2: #eb6834; /* orange  */
+  --series-3: #1baf7a; /* aqua    */
+  --series-4: #eda100; /* yellow  */
+  --series-5: #e87ba4; /* magenta */
+  --series-6: #008300; /* green   */
+  --series-7: #4a3aa7; /* violet  */
+  --series-8: #e34948; /* red     */
+  --series-other: #b3b2ac; /* de-emphasis grey for folded "Other" buckets */
+
+  /* sequential (blue) ramp — magnitude encoding (heatmap) */
+  --seq-100: #cde2fb;
+  --seq-200: #9ec5f4;
+  --seq-300: #6da7ec;
+  --seq-400: #3987e5;
+  --seq-500: #256abf;
+  --seq-600: #184f95;
+  --seq-700: #0d366b;
+
+  --accent: var(--series-1);
+
+  /* spacing + radius scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --shadow-card: 0 1px 2px rgba(11,11,11,0.06), 0 1px 1px rgba(11,11,11,0.04);
+  --shadow-popover: 0 8px 24px rgba(11,11,11,0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+
+    --surface-page:   #0d0d0d;
+    --surface-card:   #1a1a19;
+    --surface-raised: #232322;
+
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+
+    --border-hairline: rgba(255,255,255,0.10);
+    --grid-line:        #2c2c2a;
+    --axis-line:         #383835;
+    --focus-ring:        #3987e5;
+
+    --delta-good: #0ca30c;
+    --delta-bad:  #d03b3b;
+
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-serious:  #ec835a;
+    --status-critical: #d03b3b;
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+    --series-other: #5c5b56;
+
+    --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 1px 1px rgba(0,0,0,0.3);
+    --shadow-popover: 0 8px 24px rgba(0,0,0,0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-page:   #0d0d0d;
+  --surface-card:   #1a1a19;
+  --surface-raised: #232322;
+
+  --text-primary:   #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted:     #898781;
+
+  --border-hairline: rgba(255,255,255,0.10);
+  --grid-line:        #2c2c2a;
+  --axis-line:         #383835;
+  --focus-ring:        #3987e5;
+
+  --delta-good: #0ca30c;
+  --delta-bad:  #d03b3b;
+
+  --status-good:     #0ca30c;
+  --status-warning:  #fab219;
+  --status-serious:  #ec835a;
+  --status-critical: #e66767;
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --series-other: #5c5b56;
+
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 1px 1px rgba(0,0,0,0.3);
+  --shadow-popover: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+/* --------------------------------------------------------------------------
+   2. Reset & base
+   -------------------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { color-scheme: light dark; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, p { margin: 0; }
+
+button { font-family: inherit; }
+
+/* --------------------------------------------------------------------------
+   3. Header
+   -------------------------------------------------------------------------- */
+.app-header {
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-hairline);
+  padding: var(--space-4) var(--space-5);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+.app-header__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.app-header__titles { min-width: 0; }
+.app-header__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.app-header__subtitle {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+.app-header__updated {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.icon-button:hover { background: var(--surface-page); }
+.icon-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.icon-button__glyph { font-size: 1rem; line-height: 1; }
+
+/* --------------------------------------------------------------------------
+   4. Status banner (loading / error state for the CSV fetch)
+   -------------------------------------------------------------------------- */
+.status-banner {
+  max-width: 1400px;
+  margin: var(--space-4) auto 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+}
+.status-banner--loading {
+  background: color-mix(in srgb, var(--series-1) 12%, var(--surface-card));
+  color: var(--text-secondary);
+  border: 1px solid var(--border-hairline);
+}
+.status-banner--error {
+  background: color-mix(in srgb, var(--status-critical) 14%, var(--surface-card));
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--status-critical) 40%, transparent);
+}
+.status-banner__title { font-weight: 700; margin-bottom: 2px; }
+
+/* --------------------------------------------------------------------------
+   5. Main layout
+   -------------------------------------------------------------------------- */
+.app-main {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.dashboard-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.section-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+.section-subtitle {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  max-width: 70ch;
+}
+
+/* --------------------------------------------------------------------------
+   6. Filter bar
+   One left-aligned row above the content it scopes (dataviz interaction rule).
+   Wraps to multiple rows on narrow viewports rather than scrolling sideways.
+   -------------------------------------------------------------------------- */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-card);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  position: sticky;
+  top: 73px;
+  z-index: 20;
+  box-shadow: var(--shadow-card);
+}
+
+.filter-control { position: relative; }
+
+.filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.filter-trigger:hover { background: var(--surface-page); }
+.filter-trigger:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.filter-trigger--active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-hairline));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-raised));
+}
+.filter-trigger__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+.filter-trigger__chevron { font-size: 0.625rem; color: var(--text-muted); }
+
+.filter-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 260px;
+  max-width: 320px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+  padding: var(--space-2);
+  z-index: 40;
+}
+.filter-popover[hidden] { display: none; }
+.filter-popover--wide { min-width: 320px; }
+
+.filter-search {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  margin-bottom: var(--space-2);
+}
+.filter-search:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+
+.filter-option-list {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+.filter-option:hover { background: var(--surface-page); }
+.filter-option input[type="checkbox"] { accent-color: var(--accent); }
+.filter-option__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.filter-option__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-option__meta { color: var(--text-muted); font-size: 0.6875rem; }
+.filter-option--disabled { opacity: 0.4; cursor: not-allowed; }
+
+.filter-popover__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+}
+.filter-popover__hint { font-size: 0.6875rem; color: var(--text-muted); }
+
+.filter-popover__clear {
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 4px var(--space-2);
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+.filter-popover__clear:hover { color: var(--text-primary); }
+
+.filter-preset-list {
+  display: flex;
+  flex-direction: column;
+}
+.filter-preset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+.filter-preset:hover { background: var(--surface-page); }
+.filter-preset__check { font-weight: 700; font-size: 1rem; color: var(--accent); visibility: hidden; }
+.filter-preset--selected .filter-preset__check { visibility: visible; }
+.filter-preset-custom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+}
+.filter-date-select {
+  flex: 1;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+
+.filter-segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+.filter-segmented__option {
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-hairline);
+  cursor: pointer;
+}
+.filter-segmented__option:last-child { border-right: none; }
+.filter-segmented__option:hover { background: var(--surface-page); }
+.filter-segmented__option--selected {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.filter-reset {
+  margin-left: auto;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.filter-reset:hover { color: var(--text-primary); text-decoration: underline; }
+
+/* --------------------------------------------------------------------------
+   7. KPI row / stat tiles
+   -------------------------------------------------------------------------- */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.stat-tile {
+  background: var(--surface-card);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.stat-tile__label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.stat-tile__value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.stat-tile__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  width: fit-content;
+}
+.stat-tile__delta--good { color: var(--delta-good); }
+.stat-tile__delta--bad { color: var(--delta-bad); }
+.stat-tile__delta--flat { color: var(--text-muted); }
+.stat-tile__delta-caption {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   8. Chart cards + grid
+   Fixed-height rule: any fixed height on a card includes the axis band so
+   the card body never scrolls vertically on its own.
+   -------------------------------------------------------------------------- */
+.chart-grid {
+  display: grid;
+  gap: var(--space-3);
+}
+.chart-grid--1col { grid-template-columns: 1fr; }
+.chart-grid--2col { grid-template-columns: repeat(2, 1fr); }
+
+.chart-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.chart-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.chart-card__title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+.chart-card__caption {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.chart-card__empty {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  padding: var(--space-6) var(--space-3);
+  text-align: center;
+}
+
+.table-toggle {
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 4px var(--space-2);
+  font-size: 0.6875rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.table-toggle:hover { color: var(--text-primary); }
+.table-toggle--active {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+/* --------------------------------------------------------------------------
+   9. SVG chart internals
+   -------------------------------------------------------------------------- */
+.viz-svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+.viz-gridline { stroke: var(--grid-line); stroke-width: 1; shape-rendering: crispEdges; }
+.viz-axis-line { stroke: var(--axis-line); stroke-width: 1; shape-rendering: crispEdges; }
+.viz-axis-label {
+  fill: var(--text-muted);
+  font-size: 10.5px;
+  font-family: var(--font-sans);
+}
+.viz-axis-label--x { text-anchor: middle; }
+.viz-axis-label--y { text-anchor: end; }
+
+.viz-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.viz-area { stroke: none; }
+.viz-area-stack-gap { stroke: var(--surface-card); stroke-width: 2; }
+
+.viz-marker {
+  stroke: var(--surface-card);
+  stroke-width: 1.5;
+}
+
+.viz-crosshair-line {
+  stroke: var(--axis-line);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+.viz-hit-rect { fill: transparent; cursor: crosshair; }
+
+.viz-bar { cursor: pointer; }
+.viz-bar--dim { opacity: 0.35; }
+.viz-bar-label {
+  font-size: 11px;
+  fill: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.viz-bar-category-label {
+  font-size: 11.5px;
+  fill: var(--text-primary);
+}
+
+.viz-cell { cursor: pointer; stroke: var(--surface-card); stroke-width: 2; }
+.viz-cell-label {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.viz-heatmap-row-label { font-size: 11.5px; fill: var(--text-primary); text-anchor: end; }
+.viz-heatmap-col-label { font-size: 11px; fill: var(--text-secondary); text-anchor: middle; }
+
+/* --------------------------------------------------------------------------
+   10. Legend
+   -------------------------------------------------------------------------- */
+.viz-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.viz-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+.viz-legend-item:hover { background: var(--surface-page); }
+.viz-legend-item--dimmed { opacity: 0.4; }
+.viz-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.viz-legend-swatch--line { width: 12px; height: 2px; border-radius: 1px; }
+
+/* --------------------------------------------------------------------------
+   11. Tooltip
+   -------------------------------------------------------------------------- */
+.tooltip {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.75rem;
+  max-width: 260px;
+}
+.tooltip[hidden] { display: none; }
+.tooltip__title {
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+}
+.tooltip__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+.tooltip__row-key {
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+.tooltip__row-label {
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tooltip__row-value {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   12. Table view (accessibility twin of every chart)
+   -------------------------------------------------------------------------- */
+.viz-table-wrap { overflow-x: auto; }
+.viz-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.viz-table caption { text-align: left; font-size: 0.75rem; color: var(--text-muted); padding-bottom: var(--space-2); }
+.viz-table th, .viz-table td {
+  text-align: right;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.viz-table th:first-child, .viz-table td:first-child {
+  text-align: left;
+  font-variant-numeric: normal;
+}
+.viz-table thead th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+.viz-table tbody tr:hover { background: var(--surface-page); }
+
+/* --------------------------------------------------------------------------
+   13. Footer
+   -------------------------------------------------------------------------- */
+.app-footer {
+  max-width: 1400px;
+  margin: var(--space-6) auto var(--space-7);
+  padding: 0 var(--space-5);
+}
+.app-footer__text {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  max-width: 80ch;
+}
+
+/* --------------------------------------------------------------------------
+   14. Responsive — mobile-first collapse
+   -------------------------------------------------------------------------- */
+@media (max-width: 860px) {
+  .app-main { padding: var(--space-4); gap: var(--space-5); }
+  .chart-grid--2col { grid-template-columns: 1fr; }
+  .filter-bar { position: static; }
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .app-header { padding: var(--space-3) var(--space-4); }
+  .app-header__subtitle { display: none; }
+}
+
+@media (max-width: 480px) {
+  .kpi-row { grid-template-columns: 1fr 1fr; }
+  .stat-tile__value { font-size: 1.5rem; }
+  .app-header__updated { display: none; }
+}
+
+/* --------------------------------------------------------------------------
+   15. Series color utility classes
+   charts.js assigns exactly one of these per SVG mark/legend swatch instead
+   of ever writing a style="" attribute or an inline fill/stroke color.
+   -------------------------------------------------------------------------- */
+.series-1 { fill: var(--series-1); stroke: var(--series-1); }
+.series-2 { fill: var(--series-2); stroke: var(--series-2); }
+.series-3 { fill: var(--series-3); stroke: var(--series-3); }
+.series-4 { fill: var(--series-4); stroke: var(--series-4); }
+.series-5 { fill: var(--series-5); stroke: var(--series-5); }
+.series-6 { fill: var(--series-6); stroke: var(--series-6); }
+.series-7 { fill: var(--series-7); stroke: var(--series-7); }
+.series-8 { fill: var(--series-8); stroke: var(--series-8); }
+.series-other { fill: var(--series-other); stroke: var(--series-other); }
+
+.seq-100 { fill: var(--seq-100); }
+.seq-200 { fill: var(--seq-200); }
+.seq-300 { fill: var(--seq-300); }
+.seq-400 { fill: var(--seq-400); }
+.seq-500 { fill: var(--seq-500); }
+.seq-600 { fill: var(--seq-600); }
+.seq-700 { fill: var(--seq-700); }
+
+/* light-on-dark vs dark-on-light label ink for heatmap cells, chosen per
+   cell by charts.js based on the cell's sequential step */
+.cell-ink-light { fill: #ffffff; }
+.cell-ink-dark { fill: var(--text-primary); }
+
+.delta-glyph-up::before { content: "\25B2"; }
+.delta-glyph-down::before { content: "\25BC"; }
+.delta-glyph-flat::before { content: "\2014"; }

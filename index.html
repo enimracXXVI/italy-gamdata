@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Italy Gaming Market Dashboard</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-header__row">
+    <div class="app-header__titles">
+      <h1 class="app-header__title">Italy Gaming Market</h1>
+      <p class="app-header__subtitle">ADM monthly market data &mdash; GGR &amp; Turnover by operator</p>
+    </div>
+    <div class="app-header__actions">
+      <span class="app-header__updated" id="last-updated"></span>
+      <button type="button" class="icon-button" id="theme-toggle" aria-label="Toggle dark mode">
+        <span class="icon-button__glyph" id="theme-toggle-glyph" aria-hidden="true">&#9789;</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="status-banner" id="status-banner" hidden></div>
+
+<main class="app-main">
+
+  <section class="filter-bar" id="filter-bar" aria-label="Filters">
+    <!-- populated by js/app.js: date range, vertical select, channel select, operator compare select, metric toggle, reset -->
+  </section>
+
+  <section class="kpi-row" id="kpi-row" aria-label="Key metrics">
+    <!-- populated by js/app.js with .stat-tile elements -->
+  </section>
+
+  <section class="dashboard-section">
+    <h2 class="section-title">Market overview</h2>
+    <p class="section-subtitle">Total market volume across the filtered date range and channels, split by vertical.</p>
+    <div class="chart-grid chart-grid--2col">
+      <div class="chart-card" id="card-vertical-trend"></div>
+      <div class="chart-card" id="card-group-share"></div>
+    </div>
+    <div class="chart-grid chart-grid--1col">
+      <div class="chart-card" id="card-leaderboard"></div>
+    </div>
+  </section>
+
+  <section class="dashboard-section">
+    <h2 class="section-title">Operator compare</h2>
+    <p class="section-subtitle">Pick up to 6 operators in the filter bar above to trace their trend and break down their mix by vertical and channel.</p>
+    <div class="chart-grid chart-grid--1col">
+      <div class="chart-card" id="card-compare-trend"></div>
+    </div>
+    <div class="chart-grid chart-grid--1col">
+      <div class="chart-card" id="card-compare-matrix"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="app-footer">
+  <p class="app-footer__text">
+    Source data is maintained by hand in a Google Sheet and read live at page load &mdash;
+    no build step, no database. Verticals: Casino, Sportsbetting, Horse Racing (Fixed Odds &amp; Tote), Poker (Cash &amp; Tournament).
+  </p>
+</footer>
+
+<div class="tooltip" id="viz-tooltip" role="tooltip" hidden></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
