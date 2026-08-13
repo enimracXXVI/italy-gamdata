@@ -85,6 +85,38 @@ function setupTabs() {
 // Data Quality tab
 // ---------------------------------------------------------------------------
 const QUALITY_TABLE_CAP = 300;
+const QUALITY_DISMISS_KEY = "gamdata-quality-dismissed";
+
+function loadDismissed() {
+  try { return new Set(JSON.parse(localStorage.getItem(QUALITY_DISMISS_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+function saveDismissed(set) {
+  localStorage.setItem(QUALITY_DISMISS_KEY, JSON.stringify([...set]));
+}
+const dismissedKeys = loadDismissed();
+
+function updateQualityBadge(checks) {
+  const activeCount = [
+    ...checks.duplicates.map((g) => `dup:${g.monthKey}:${g.operator}:${g.vertical}:${g.channel}`),
+    ...checks.extremeMargins.map((r) => `margin:${r.monthKey}:${r.operator}:${r.vertical}:${r.channel}`),
+    ...checks.blankTurnovers.map((r) => `blank:${r.monthKey}:${r.operator}:${r.vertical}:${r.channel}`),
+    ...checks.groupInconsistencies.map((g) => `group:${g.operator}`),
+  ].filter((k) => !dismissedKeys.has(k)).length;
+
+  const btn = document.getElementById("tab-btn-quality");
+  let badge = btn.querySelector(".tab-nav__item-badge");
+  if (activeCount === 0) {
+    if (badge) badge.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "tab-nav__item-badge";
+    btn.appendChild(badge);
+  }
+  badge.textContent = String(activeCount);
+}
 
 function emptyQualityNote(text) {
   const p = document.createElement("p");
@@ -93,7 +125,13 @@ function emptyQualityNote(text) {
   return p;
 }
 
-function buildQualitySection(title, subtitle, tableEl) {
+/** A quality-check table with a per-row dismiss/restore action. `items` are
+ * the raw check results; `keyFn` derives a stable localStorage key per item
+ * so "not an issue" survives reloads (the sheet re-generates the same
+ * finding every time otherwise); `rowFn` formats one item into display
+ * cells. Dismissed rows stay visible but muted, with a "Restore" button —
+ * nothing silently disappears without a visible trail back. */
+function buildQualitySection(checks, title, subtitle, items, columns, keyFn, rowFn) {
   const section = document.createElement("section");
   section.className = "dashboard-section";
   const h2 = document.createElement("h2");
@@ -104,7 +142,66 @@ function buildQualitySection(title, subtitle, tableEl) {
   p.textContent = subtitle;
   const card = document.createElement("div");
   card.className = "chart-card";
-  card.appendChild(tableEl);
+
+  if (items.length === 0) {
+    card.appendChild(emptyQualityNote("None found."));
+    section.append(h2, p, card);
+    return section;
+  }
+
+  const activeCount = items.filter((it) => !dismissedKeys.has(keyFn(it))).length;
+  const dismissedCount = items.length - activeCount;
+  const caption = document.createElement("p");
+  caption.className = "chart-card__caption";
+  const shown = items.slice(0, QUALITY_TABLE_CAP);
+  caption.textContent = `${activeCount} active${dismissedCount > 0 ? `, ${dismissedCount} marked not-an-issue` : ""}`
+    + (items.length > QUALITY_TABLE_CAP ? ` — showing the first ${QUALITY_TABLE_CAP} of ${items.length}.` : ".");
+  card.appendChild(caption);
+
+  const wrap = document.createElement("div");
+  wrap.className = "viz-table-wrap";
+  const table = document.createElement("table");
+  table.className = "viz-table";
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const col of [...columns, ""]) {
+    const th = document.createElement("th");
+    th.textContent = col;
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const item of shown) {
+    const key = keyFn(item);
+    const isDismissed = dismissedKeys.has(key);
+    const tr = document.createElement("tr");
+    if (isDismissed) tr.className = "quality-row--dismissed";
+    for (const cell of rowFn(item)) {
+      const td = document.createElement("td");
+      td.textContent = cell;
+      tr.appendChild(td);
+    }
+    const actionTd = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "quality-dismiss-btn";
+    btn.textContent = isDismissed ? "Restore" : "Not an issue";
+    btn.addEventListener("click", () => {
+      if (dismissedKeys.has(key)) dismissedKeys.delete(key); else dismissedKeys.add(key);
+      saveDismissed(dismissedKeys);
+      renderQualityTab(checks);
+      updateQualityBadge(checks);
+    });
+    actionTd.appendChild(btn);
+    tr.appendChild(actionTd);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  card.appendChild(wrap);
+
   section.append(h2, p, card);
   return section;
 }
@@ -113,9 +210,9 @@ function renderQualityTab(checks) {
   const root = document.getElementById("tab-panel-quality");
   root.innerHTML = "";
 
+  const duplicateRowCount = checks.duplicates.reduce((s, g) => s + g.occurrences.length, 0);
   const summary = document.createElement("section");
   summary.className = "kpi-row";
-  const duplicateRowCount = checks.duplicates.reduce((s, g) => s + g.occurrences.length, 0);
   const tiles = [
     ["Duplicate rows", duplicateRowCount],
     ["Extreme margin outliers", checks.extremeMargins.length],
@@ -132,91 +229,48 @@ function renderQualityTab(checks) {
   }
   root.appendChild(summary);
 
-  // --- Duplicate rows -------------------------------------------------
-  {
-    const rows = checks.duplicates.slice(0, QUALITY_TABLE_CAP).map((g) => [
-      g.monthLabel, g.operator, g.vertical, g.channel,
-      String(g.occurrences.length),
+  root.appendChild(buildQualitySection(
+    checks,
+    "Duplicate rows",
+    "Same month + operator + vertical + channel entered more than once — the most common copy/paste slip, and it silently inflates totals for that period in every chart on the Dashboard tab.",
+    checks.duplicates,
+    ["Month", "Operator", "Vertical", "Channel", "×", "GGR / Turnover per occurrence"],
+    (g) => `dup:${g.monthKey}:${g.operator}:${g.vertical}:${g.channel}`,
+    (g) => [
+      g.monthLabel, g.operator, g.vertical, g.channel, String(g.occurrences.length),
       g.occurrences.map((o) => `${Charts.formatMoney(o.ggr)} / ${Charts.formatMoney(o.turnover)}`).join("   vs.   "),
-    ]);
-    const table = rows.length > 0
-      ? Charts.buildTable({
-          caption: checks.duplicates.length > QUALITY_TABLE_CAP
-            ? `Showing the ${QUALITY_TABLE_CAP} most recent of ${checks.duplicates.length} duplicate combos (${duplicateRowCount} rows total).`
-            : `${checks.duplicates.length} duplicate combo(s), ${duplicateRowCount} rows total.`,
-          columns: ["Month", "Operator", "Vertical", "Channel", "×", "GGR / Turnover per occurrence"],
-          rows,
-        })
-      : emptyQualityNote("None found — every (month, operator, vertical, channel) combination appears exactly once.");
-    root.appendChild(buildQualitySection(
-      "Duplicate rows",
-      "Same month + operator + vertical + channel entered more than once — the most common copy/paste slip, and it silently inflates totals for that period in every chart on the Dashboard tab.",
-      table
-    ));
-  }
+    ]
+  ));
 
-  // --- Extreme margins --------------------------------------------------
-  {
-    const rows = checks.extremeMargins.slice(0, QUALITY_TABLE_CAP).map((r) => [
-      r.monthLabel, r.operator, r.vertical, r.channel,
-      Charts.formatMoney(r.ggr), Charts.formatMoney(r.turnover), Charts.formatPercent(r.margin),
-    ]);
-    const table = rows.length > 0
-      ? Charts.buildTable({
-          caption: checks.extremeMargins.length > QUALITY_TABLE_CAP
-            ? `Showing the ${QUALITY_TABLE_CAP} most extreme of ${checks.extremeMargins.length} rows.`
-            : `${checks.extremeMargins.length} row(s).`,
-          columns: ["Month", "Operator", "Vertical", "Channel", "GGR", "Turnover", "Margin"],
-          rows,
-        })
-      : emptyQualityNote("None found — no row over €5,000 GGR has a margin beyond ±50%.");
-    root.appendChild(buildQualitySection(
-      "Extreme margins",
-      "GGR ÷ Turnover beyond ±50%, restricted to rows with at least €5,000 of GGR so a tiny operator's small-number noise doesn't drown out real typos (a missing digit on Turnover is the usual cause).",
-      table
-    ));
-  }
+  root.appendChild(buildQualitySection(
+    checks,
+    "Extreme margins",
+    "GGR ÷ Turnover beyond ±50%, restricted to rows with at least €5,000 of GGR so a tiny operator's small-number noise doesn't drown out real typos (a missing digit on Turnover is the usual cause).",
+    checks.extremeMargins,
+    ["Month", "Operator", "Vertical", "Channel", "GGR", "Turnover", "Margin"],
+    (r) => `margin:${r.monthKey}:${r.operator}:${r.vertical}:${r.channel}`,
+    (r) => [r.monthLabel, r.operator, r.vertical, r.channel, Charts.formatMoney(r.ggr), Charts.formatMoney(r.turnover), Charts.formatPercent(r.margin)]
+  ));
 
-  // --- Blank turnover -----------------------------------------------------
-  {
-    const rows = checks.blankTurnovers.slice(0, QUALITY_TABLE_CAP).map((r) => [
-      r.monthLabel, r.operator, r.vertical, r.channel, Charts.formatMoney(r.ggr),
-    ]);
-    const table = rows.length > 0
-      ? Charts.buildTable({
-          caption: checks.blankTurnovers.length > QUALITY_TABLE_CAP
-            ? `Showing the ${QUALITY_TABLE_CAP} most recent of ${checks.blankTurnovers.length} rows.`
-            : `${checks.blankTurnovers.length} row(s).`,
-          columns: ["Month", "Operator", "Vertical", "Channel", "GGR"],
-          rows,
-        })
-      : emptyQualityNote("None found — every row with GGR also has a Turnover value.");
-    root.appendChild(buildQualitySection(
-      "Blank Turnover with non-zero GGR",
-      "Not necessarily wrong — some operators genuinely don't report turnover for a channel — but it breaks margin math for that row, so worth a glance.",
-      table
-    ));
-  }
+  root.appendChild(buildQualitySection(
+    checks,
+    "Blank Turnover with non-zero GGR",
+    "Not necessarily wrong — some operators genuinely don't report turnover for a channel — but it breaks margin math for that row, so worth a glance.",
+    checks.blankTurnovers,
+    ["Month", "Operator", "Vertical", "Channel", "GGR"],
+    (r) => `blank:${r.monthKey}:${r.operator}:${r.vertical}:${r.channel}`,
+    (r) => [r.monthLabel, r.operator, r.vertical, r.channel, Charts.formatMoney(r.ggr)]
+  ));
 
-  // --- Operator/Group naming inconsistencies -------------------------------
-  {
-    const rows = checks.groupInconsistencies.map((g) => [
-      g.operator,
-      g.variants.map((v) => `${v.name} (${v.count} rows, from ${v.firstSeen})`).join("   /   "),
-    ]);
-    const table = rows.length > 0
-      ? Charts.buildTable({
-          caption: `${rows.length} operator(s) with more than one Operator Group spelling.`,
-          columns: ["Operator", "Group names seen"],
-          rows,
-        })
-      : emptyQualityNote("None found — every operator maps to exactly one Operator Group.");
-    root.appendChild(buildQualitySection(
-      "Operator → Group naming inconsistencies",
-      "Splits one group's totals across two labels in the Operator group's rollups. Could be spelling drift (e.g. a dropped “S.R.L.”) or a genuine ownership change — worth a look either way.",
-      table
-    ));
-  }
+  root.appendChild(buildQualitySection(
+    checks,
+    "Operator → Group naming inconsistencies",
+    "Splits one group's totals across two labels in the Operator group's rollups. Could be spelling drift (e.g. a dropped “S.R.L.”) or a genuine ownership change — worth a look either way.",
+    checks.groupInconsistencies,
+    ["Operator", "Group names seen"],
+    (g) => `group:${g.operator}`,
+    (g) => [g.operator, g.variants.map((v) => `${v.name} (${v.count} rows, from ${v.firstSeen})`).join("   /   ")]
+  ));
 }
 
 // ---------------------------------------------------------------------------
@@ -237,27 +291,12 @@ async function boot() {
     return;
   }
 
+  hideStatus();
+
   const qualityChecks = Quality.runAllChecks(records);
   renderQualityTab(qualityChecks);
   setupTabs();
-
-  const dupeGroups = qualityChecks.duplicates;
-  if (dupeGroups.length > 0) {
-    const byMonth = new Map();
-    for (const g of dupeGroups) {
-      byMonth.set(g.monthLabel, (byMonth.get(g.monthLabel) || 0) + 1);
-    }
-    const months = [...byMonth.entries()].sort((a, b) => b[1] - a[1]);
-    const [topLabel, topCount] = months[0];
-    const restCount = months.length - 1;
-    const rowCount = dupeGroups.reduce((s, g) => s + g.occurrences.length, 0);
-    const detail = restCount > 0
-      ? `Worst: ${topLabel} has ${topCount} operator/vertical/channel combos entered more than once (plus smaller repeats in ${restCount} other month${restCount === 1 ? "" : "s"}). Totals for those months are inflated until the extra rows are removed from the sheet. Full list on the Data Quality tab.`
-      : `${topLabel} has ${topCount} operator/vertical/channel combos entered more than once. Totals for that month are inflated until the extra rows are removed from the sheet. Full list on the Data Quality tab.`;
-    showStatus("warning", `Data quality: ${rowCount} duplicate rows found`, detail);
-  } else {
-    hideStatus();
-  }
+  updateQualityBadge(qualityChecks);
 
   const allMonths = distinctMonths(records);
   const operators = distinctOperators(records);
@@ -273,6 +312,7 @@ async function boot() {
     channels: new Set(channelOrder),
     operators: new Set(),
     metric: "ggr",
+    operatorShareBasis: "ggr",
   };
 
   buildFilterBar();
@@ -333,6 +373,7 @@ async function boot() {
       state.channels = new Set(channelOrder);
       state.operators = new Set();
       state.metric = "ggr";
+      state.operatorShareBasis = "ggr";
       buildFilterBar();
       render();
     });
@@ -453,17 +494,25 @@ async function boot() {
     }
 
     // --- Market overview: operator share ------------------------------------
-    // Always a 100%-stacked composition view, regardless of the metric
-    // toggle — the card is titled "share", so it should always show share;
-    // GGR/Margin/Share all read as GGR-share here, Turnover reads as
-    // Turnover-share. (Absolute € trend already lives in the KPI tiles and
-    // the leaderboard; this chart's job is "how has the mix shifted".)
+    // Always a 100%-stacked composition view — this card is titled "share",
+    // so it always shows share, on its own local GGR/Turnover toggle rather
+    // than the page-wide metric toggle (which also has Margin %/Share %
+    // options that don't apply here and would silently produce the exact
+    // same GGR-share chart, making the global toggle look broken for this
+    // one card). Absolute € trend already lives in the KPI tiles and the
+    // leaderboard; this chart's job is "how has the mix shifted".
     {
+      const shareBasisToggle = createSegmented({
+        options: [{ key: "ggr", label: "GGR" }, { key: "turnover", label: "Turnover" }],
+        selected: { value: state.operatorShareBasis },
+        onChange: (key) => { state.operatorShareBasis = key; render(); },
+      });
       const { body, tableSlot } = Charts.buildCardShell(cards.operatorShare, {
         title: "Operator share",
-        caption: `Top 7 operators' % share of total ${state.metric === "turnover" ? "Turnover" : "GGR"}, per month — always sums to 100%.`,
+        caption: `Top 7 operators' % share of total ${state.operatorShareBasis === "turnover" ? "Turnover" : "GGR"}, per month — always sums to 100%. Independent of the GGR/Turnover/Margin/Share toggle above, which scopes the rest of the dashboard.`,
+        extra: shareBasisToggle.el,
       });
-      const groupMetric = state.metric === "turnover" ? "turnover" : "ggr";
+      const groupMetric = state.operatorShareBasis === "turnover" ? "turnover" : "ggr";
       const topOperators = Agg.topKeysByTotal(filtered, "operator", groupMetric, 7);
       const { series } = Agg.monthlySeries(filtered, months, "operator", groupMetric, topOperators);
       const others = series.find((s) => s.key === "Other");

@@ -48,6 +48,16 @@ name, and per vertical via its fixed position in `VERTICAL_ORDER` (`js/data.js`)
 This is deliberate — see the comment in `charts.js` — so a given operator or
 vertical always gets the same color no matter what else is selected.
 
+**Every `series-*`/`seq-*` class sets both an SVG color (`fill`/`stroke`) and
+`background-color`.** They're used on two different kinds of element: SVG
+marks (bars, areas, lines — read `fill`/`stroke`, ignore `background-color`)
+and plain HTML `<span>` swatches — legend swatches, tooltip color keys,
+filter-option swatches (read `background-color`, and `fill`/`stroke` are
+silent no-ops on non-SVG elements). Missing `background-color` was a real bug
+here: every legend/tooltip/filter swatch rendered with no color at all,
+looking like a legend with no color key. Both properties need to stay on
+every one of these classes going forward.
+
 ---
 
 ## 2. Layout shell
@@ -59,6 +69,7 @@ vertical always gets the same color no matter what else is selected.
 | `.app-header__titles` | Wraps the `<h1>` | same |
 | `.app-header__title` | "Italy Gaming Market" | same |
 | `.tab-nav` / `.tab-nav__item` / `--active` | Dashboard ↔ Data Quality switcher in the header. Same `:not(--active):hover` scoping as the segmented control | header, `app.js` `setupTabs()` |
+| `.tab-nav__item-badge` | Small count pill on the "Data Quality" tab button — active (non-dismissed) finding count. Removed entirely when the count is 0 | `app.js` `updateQualityBadge()` |
 | `.app-header__actions` | Right-side cluster (last-updated + theme button) | same |
 | `.app-header__updated` | "Data through …" text, hidden under 480px | same, set by `app.js` |
 | `.icon-button` / `.icon-button__glyph` | Circular theme-toggle button + its glyph span | header `#theme-toggle` |
@@ -124,11 +135,14 @@ range first, then dimension filters, then the metric toggle, then reset.
 |---|---|
 | `.chart-grid` + `--1col` / `--2col` | Grid wrapper that lays out 1 or 2 cards per row (collapses to 1 under 860px) |
 | `.chart-card` | The white/dark card shell around every chart |
-| `.chart-card__header` | Title + caption on the left, "View as table" button on the right |
+| `.chart-card__header` | Title row on the left, controls (optional local toggle + "View as table") on the right |
+| `.chart-card__title-row` | Wraps the `<h3>` title and its (i) info button |
 | `.chart-card__title` | Chart title, e.g. "Market trend by vertical" |
-| `.chart-card__caption` | One-line description under the title |
+| `.chart-card__controls` | Right-side cluster in the header: an optional `extra` node (e.g. Operator share's local GGR/Turnover toggle) plus the table-view button |
+| `.chart-card__caption` | Used in two places with different weight: as the always-visible "N row(s)" summary line in the Data Quality tables, and as the *content* rendered inside a chart's `.info-popover` (see below) — never as permanent text on a dashboard chart card anymore |
 | `.chart-card__empty` | Centered placeholder text when a chart has nothing to show (e.g. no operators picked yet) |
-| `.table-toggle` / `--active` | The "View as table" / "View as chart" button on every card |
+| `.info-button-wrap` / `.info-button` / `.info-popover` | The "ⓘ" next to a chart title and its popover — `buildCardShell`'s `caption` text now lives here instead of as permanent on-card text, decluttering the default view. Opens on click/tap (works on touch) and on desktop hover; click always *opens* rather than toggles, since a toggle would fight the hover handler (a mouse click fires `mouseenter` before `click`, so a naive toggle would immediately re-close what hover just opened) |
+| `.table-toggle` / `--active` | The "View as table" / "View as chart" button on every card. `:hover` is scoped `:not(.table-toggle--active)` for the same reason as the segmented control |
 
 ---
 
@@ -232,6 +246,24 @@ and don't have that long-tail problem.
 | `.tooltip__row-label` / `.tooltip__row-value` | Series name (secondary weight) / its value (bold — values lead, labels follow) |
 | `.viz-table-wrap` | Horizontal-scroll wrapper around a table-view `<table>` |
 | `.viz-table` | The table itself (the accessibility twin of every chart) |
+
+---
+
+## 9. Data Quality tab (`js/quality.js`, rendered by `app.js`)
+
+Reuses `.dashboard-section` / `.chart-card` / `.viz-table*` / `.stat-tile`
+from above for its layout — only the dismiss mechanism is new:
+
+| Class | What it is |
+|---|---|
+| `.quality-row--dismissed` | Applied to a `<tr>` whose finding was marked "Not an issue" — 45% opacity, stays visible (never removed from the table) so there's a visible trail back via its "Restore" button |
+| `.quality-dismiss-btn` | The "Not an issue" / "Restore" button in each finding row's last column |
+
+Dismissal is per-finding, keyed by a stable string (e.g.
+`dup:2026-07:GOLDBET:Casino:Online`) stored in `localStorage` under
+`gamdata-quality-dismissed` — it survives reloads, since the sheet
+re-generates the same finding every time otherwise. The `.tab-nav__item-badge`
+count only counts non-dismissed findings.
 
 ---
 

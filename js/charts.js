@@ -92,15 +92,16 @@ function svgEl(tag, attrs = {}, className) {
 }
 function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+// Finer step table than the classic {1,2,5,10} — that set can leave up to
+// ~43% empty headroom above the real peak (e.g. a 700-unit peak rounds all
+// the way to 1000). These steps cap headroom at ~25% while still landing on
+// round-looking numbers.
+const NICE_STEPS = [1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
 function niceMax(max) {
   if (max <= 0) return 1;
   const magnitude = Math.pow(10, Math.floor(Math.log10(max)));
   const residual = max / magnitude;
-  let niceResidual;
-  if (residual > 5) niceResidual = 10;
-  else if (residual > 2) niceResidual = 5;
-  else if (residual > 1) niceResidual = 2;
-  else niceResidual = 1;
+  const niceResidual = NICE_STEPS.find((s) => s >= residual) ?? 10;
   return niceResidual * magnitude;
 }
 
@@ -235,28 +236,92 @@ export function buildTable({ caption, columns, rows }) {
   return wrap;
 }
 
+let openInfoPopoverCloser = null;
+
+/** Small "ⓘ" button + popover, used to move a chart's explanation out of
+ * permanent on-card text. Click/tap toggles it (works on touch, where hover
+ * doesn't exist); it also opens on mouse hover as a desktop convenience. */
+function buildInfoButton(text) {
+  const wrap = document.createElement("span");
+  wrap.className = "info-button-wrap";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "info-button";
+  button.textContent = "i";
+  button.setAttribute("aria-label", "About this chart");
+
+  const popover = document.createElement("div");
+  popover.className = "info-popover";
+  popover.textContent = text;
+  popover.hidden = true;
+
+  let isOpen = false;
+  function close() {
+    if (!isOpen) return;
+    popover.hidden = true;
+    isOpen = false;
+    if (openInfoPopoverCloser === close) openInfoPopoverCloser = null;
+    document.removeEventListener("pointerdown", onOutside, true);
+  }
+  function onOutside(evt) {
+    if (!wrap.contains(evt.target)) close();
+  }
+  function open() {
+    if (isOpen) return;
+    if (openInfoPopoverCloser) openInfoPopoverCloser();
+    popover.hidden = false;
+    isOpen = true;
+    openInfoPopoverCloser = close;
+    document.addEventListener("pointerdown", onOutside, true);
+  }
+  // Click always opens (never toggles-closed) — a toggle here would fight
+  // the hover handler below: a mouse click fires `mouseenter` before
+  // `click`, so by the time `click` ran the popover would already be open
+  // and a toggle would immediately close what hover just opened. Closing is
+  // handled by mouseleave (desktop) and the outside-pointerdown listener
+  // (desktop click-away and touch tap-away alike).
+  button.addEventListener("click", (evt) => {
+    evt.stopPropagation();
+    open();
+  });
+  wrap.addEventListener("mouseenter", open);
+  wrap.addEventListener("mouseleave", close);
+
+  wrap.append(button, popover);
+  return wrap;
+}
+
 /** Wires the standard chart-card header: title, caption, and a table-view
- * toggle button that swaps the chart body for its table twin. */
-export function buildCardShell(card, { title, caption }) {
+ * toggle button that swaps the chart body for its table twin. `caption`
+ * (the "what am I looking at" explanation) lives behind a small (i) button
+ * next to the title rather than as permanent text — hover or tap/click to
+ * read it, so the card's default state is just the chart. `extra` is an
+ * optional DOM node (e.g. a small local toggle) inserted before the table
+ * button. */
+export function buildCardShell(card, { title, caption, extra }) {
   clear(card);
   const header = document.createElement("div");
   header.className = "chart-card__header";
-  const titles = document.createElement("div");
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "chart-card__title-row";
   const h3 = document.createElement("h3");
   h3.className = "chart-card__title";
   h3.textContent = title;
-  titles.appendChild(h3);
-  if (caption) {
-    const cap = document.createElement("p");
-    cap.className = "chart-card__caption";
-    cap.textContent = caption;
-    titles.appendChild(cap);
-  }
+  titleRow.appendChild(h3);
+  if (caption) titleRow.appendChild(buildInfoButton(caption));
+
+  const controls = document.createElement("div");
+  controls.className = "chart-card__controls";
+  if (extra) controls.appendChild(extra);
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "table-toggle";
   toggle.textContent = "View as table";
-  header.append(titles, toggle);
+  controls.appendChild(toggle);
+
+  header.append(titleRow, controls);
 
   const body = document.createElement("div");
   const tableSlot = document.createElement("div");
