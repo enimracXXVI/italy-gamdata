@@ -62,9 +62,10 @@ export function formatPercent(n) {
   return `${(n * 100).toFixed(2)}%`;
 }
 export function formatMetric(value, metric) {
+  if (metric === "index") return value === null || value === undefined || Number.isNaN(value) ? "—" : value.toFixed(1);
   return metric === "hold" ? formatPercent(value) : formatMoney(value);
 }
-export const METRIC_LABEL = { ggr: "GGR", turnover: "Turnover", hold: "Hold %" };
+export const METRIC_LABEL = { ggr: "GGR", turnover: "Turnover", hold: "Margin %", index: "Index (start = 100)" };
 
 // ---------------------------------------------------------------------------
 // DOM/SVG helpers
@@ -88,6 +89,29 @@ function niceMax(max) {
   else if (residual > 1) niceResidual = 2;
   else niceResidual = 1;
   return niceResidual * magnitude;
+}
+
+/** Every chart's viewBox width is set to the container's real measured pixel
+ * width (not a fixed constant), so 1 SVG unit = 1 real px at render time —
+ * otherwise a chart in a full-width 1-col card scales its viewBox up ~2x
+ * relative to the same code in a 2-col card, and every font-size/stroke-width
+ * inflates along with it. This is what keeps text/stroke sizing consistent
+ * across every chart regardless of how wide its card happens to be. */
+function measureWidth(el, fallback = 640) {
+  const w = Math.round(el.getBoundingClientRect().width);
+  return w > 0 ? w : fallback;
+}
+
+/** Picks up to `maxLabels` evenly-spaced indices from a 0..n-1 range,
+ * always including the first and last. Avoids the classic "modulo step"
+ * bug where the forced-last label lands right next to the previous one. */
+function evenlySpacedIndices(n, maxLabels) {
+  if (n <= maxLabels) return Array.from({ length: n }, (_, i) => i);
+  const idx = new Set();
+  for (let k = 0; k < maxLabels; k++) {
+    idx.add(Math.round((k * (n - 1)) / (maxLabels - 1)));
+  }
+  return [...idx].sort((a, b) => a - b);
 }
 
 // ---------------------------------------------------------------------------
@@ -258,24 +282,37 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
     return;
   }
 
-  const W = 640, H = 260;
+  const W = measureWidth(body), H = 260;
   const marginL = 56, marginR = 12, marginT = 12, marginB = 28;
   const plotW = W - marginL - marginR;
   const plotH = H - marginT - marginB;
 
-  const stackedTotals = months.map((_, i) => series.reduce((acc, s) => acc + (s.values[i] || 0), 0));
-  const rawMax = stacked ? Math.max(...stackedTotals) : Math.max(...series.flatMap((s) => s.values));
-  const yMax = niceMax(rawMax || 1);
+  // An "index" chart (operator vs. market, both rebased to 100) is centered
+  // on its data range rather than 0 — a 0-based axis would waste most of the
+  // plot on empty space below values that hover around 100.
+  let yMin = 0, yMax;
+  if (metric === "index") {
+    const allVals = series.flatMap((s) => s.values).filter((v) => typeof v === "number");
+    const dataMin = Math.min(100, ...(allVals.length ? allVals : [100]));
+    const dataMax = Math.max(100, ...(allVals.length ? allVals : [100]));
+    const pad = Math.max(5, (dataMax - dataMin) * 0.2);
+    yMin = Math.floor((dataMin - pad) / 10) * 10;
+    yMax = Math.ceil((dataMax + pad) / 10) * 10;
+  } else {
+    const stackedTotals = months.map((_, i) => series.reduce((acc, s) => acc + (s.values[i] || 0), 0));
+    const rawMax = stacked ? Math.max(...stackedTotals) : Math.max(...series.flatMap((s) => s.values));
+    yMax = niceMax(rawMax || 1);
+  }
 
   const xFor = (i) => marginL + (months.length === 1 ? plotW / 2 : (i / (months.length - 1)) * plotW);
-  const yFor = (v) => marginT + plotH - (v / yMax) * plotH;
+  const yFor = (v) => marginT + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
 
   const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Trend chart" }, "viz-svg");
 
   // gridlines + y labels
   const ticks = 4;
   for (let t = 0; t <= ticks; t++) {
-    const v = (yMax / ticks) * t;
+    const v = yMin + ((yMax - yMin) / ticks) * t;
     const y = yFor(v);
     svg.appendChild(svgEl("line", { x1: marginL, x2: W - marginR, y1: y, y2: y }, "viz-gridline"));
     const label = svgEl("text", { x: marginL - 8, y: y + 3 }, "viz-axis-label viz-axis-label--y");
@@ -284,16 +321,19 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
   }
   svg.appendChild(svgEl("line", { x1: marginL, x2: marginL, y1: marginT, y2: marginT + plotH }, "viz-axis-line"));
   svg.appendChild(svgEl("line", { x1: marginL, x2: W - marginR, y1: marginT + plotH, y2: marginT + plotH }, "viz-axis-line"));
+  if (metric === "index" && 100 > yMin && 100 < yMax) {
+    svg.appendChild(svgEl("line", { x1: marginL, x2: W - marginR, y1: yFor(100), y2: yFor(100) }, "viz-baseline"));
+  }
 
-  // x labels (thin out on narrow month counts)
-  const maxLabels = 7;
-  const step = Math.max(1, Math.ceil(months.length / maxLabels));
-  months.forEach((m, i) => {
-    if (i % step !== 0 && i !== months.length - 1) return;
+  // x labels: evenly spaced (never a modulo-step clash at the last label),
+  // count adapts to the chart's real measured width so labels never crowd.
+  const maxLabels = Math.max(3, Math.min(8, Math.floor(plotW / 68)));
+  for (const i of evenlySpacedIndices(months.length, maxLabels)) {
     const label = svgEl("text", { x: xFor(i), y: H - 8 }, "viz-axis-label viz-axis-label--x");
-    label.textContent = m.label.split(" ")[0].slice(0, 3) + " " + m.label.split(" ")[1].slice(2);
+    const [monthName, year] = months[i].label.split(" ");
+    label.textContent = `${monthName.slice(0, 3)} ${year.slice(2)}`;
     svg.appendChild(label);
-  });
+  }
 
   const plotGroup = svgEl("g");
   svg.appendChild(plotGroup);
@@ -399,7 +439,7 @@ export function renderBarChart(body, tableSlot, { items, metric, emphasisMap }) 
   const rowH = 26, gap = 8;
   const marginL = 8, marginR = 64, marginT = 4, marginB = 4;
   const labelColW = 168;
-  const W = 640;
+  const W = measureWidth(body);
   const plotW = W - marginL - marginR - labelColW;
   const H = marginT + marginB + items.length * (rowH + gap) - gap;
 
@@ -495,7 +535,7 @@ export function renderHeatmapGrid(body, tableSlot, { panels, metric }) {
     const cellW = 96, cellH = 30, rowLabelW = 168, colHeaderH = 20;
     const W = rowLabelW + cols.length * cellW;
     const H = colHeaderH + rows.length * cellH;
-    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${operator} breakdown` }, "viz-svg");
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${operator} breakdown` }, "viz-svg viz-svg--fixed");
 
     const max = Math.max(...matrix.flat().filter((v) => v !== null && v !== undefined), 1);
 

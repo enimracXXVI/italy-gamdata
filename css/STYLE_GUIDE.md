@@ -36,7 +36,7 @@ manual toggle overriding it either way.
 | `--focus-ring` | `#2a78d6` | `#3987e5` | `:focus-visible` outline on interactive controls |
 | `--delta-good` | `#006300` | `#0ca30c` | KPI tile up-arrow text (metric improved) |
 | `--delta-bad` | `#d03b3b` | `#d03b3b` | KPI tile down-arrow text (metric worsened) |
-| `--status-good/warning/serious/critical` | see file | see file | Reserved status scale — currently unused directly (available for future alerting) |
+| `--status-good/warning/serious/critical` | see file | see file | Reserved status scale — `--status-warning` backs the data-quality warning banner; the rest are available for future alerting |
 | `--series-1`…`--series-8` | palette hues | palette hues | Categorical identity (verticals, operators, groups) — see §7 |
 | `--series-other` | `#b3b2ac` | `#5c5b56` | "Other" fold-in bucket + de-emphasized bars |
 | `--seq-100`…`--seq-700` | blue ramp | same | Sequential magnitude (heatmap cells) — see §7 |
@@ -62,12 +62,11 @@ vertical always gets the same color no matter what else is selected.
 | `.app-header__actions` | Right-side cluster (last-updated + theme button) | same |
 | `.app-header__updated` | "Data through …" text, hidden under 480px | same, set by `app.js` |
 | `.icon-button` / `.icon-button__glyph` | Circular theme-toggle button + its glyph span | header `#theme-toggle` |
-| `.status-banner` + `--loading` / `--error` | Fetch status message above the filter bar | `app.js` `showStatus()` |
+| `.status-banner` + `--loading` / `--error` / `--warning` | Fetch status / data-quality message above the filter bar (`--warning` is the duplicate-rows notice) | `app.js` `showStatus()` |
 | `.status-banner__title` | Bold first line of the banner | same |
 | `.app-main` | Centered column, holds every section | `index.html` `<main>` |
 | `.dashboard-section` | One titled block ("Market overview", "Operator compare") | same |
 | `.section-title` / `.section-subtitle` | Section heading + one-line description | same |
-| `.app-footer` / `.app-footer__text` | Small print at the bottom | `index.html` `<footer>` |
 
 ---
 
@@ -99,7 +98,7 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-preset__check` | The ✓ mark, visible only on `.filter-preset--selected` |
 | `.filter-preset-custom` | Footer row holding the two custom month `<select>`s |
 | `.filter-date-select` | Each of those two `<select>` elements |
-| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Hold % toggle |
+| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % toggle |
 | `.filter-reset` | "Reset filters" text button, right-aligned |
 
 ---
@@ -139,12 +138,14 @@ and scales via CSS width, so one code path serves desktop and mobile.
 
 | Class | What it is |
 |---|---|
-| `.viz-svg` | The `<svg>` root for every chart |
+| `.viz-svg` | The `<svg>` root for line/bar charts. Its `viewBox` width is set in JS to the card's *measured* pixel width (`measureWidth()` in `charts.js`) rather than a fixed constant — that's what keeps font/stroke sizes visually consistent whether the chart sits in a 1-column or 2-column card |
+| `.viz-svg--fixed` | Added alongside `.viz-svg` on heatmap panels only — keeps their natural cell size instead of stretching to fill a wide card |
 | `.viz-gridline` | Horizontal gridlines |
 | `.viz-axis-line` | The solid x/y axis lines |
-| `.viz-axis-label` + `--x` / `--y` | Tick labels |
-| `.viz-line` | A line-chart stroke (compare-operators trend) |
-| `.viz-area` | A stacked-area fill (market trend, group share) |
+| `.viz-axis-label` + `--x` / `--y` | Tick labels. X-axis labels use evenly-spaced indices (`evenlySpacedIndices()`), never a modulo step, so the last label never crowds the one before it |
+| `.viz-baseline` | The dashed "100" reference line on the indexed vs.-market chart |
+| `.viz-line` | A line-chart stroke (compare-operators trend, vs.-market index) |
+| `.viz-area` | A stacked-area fill (market trend, operator share) |
 | `.viz-area-stack-gap` | Adds the 2px surface-colored stroke that separates stacked segments |
 | `.viz-marker` | The small circle that appears on a line at the hovered month |
 | `.viz-crosshair-line` | The dashed vertical hover line |
@@ -182,15 +183,17 @@ Fixed hue order, assigned in sequence, never cycled:
 
 Assignment logic (in `charts.js`):
 - **Verticals** (Market trend chart, and the swatch in the Vertical filter) get
-  `series-1`…`series-6` in the fixed order Casino → Sportsbetting → Horse
-  Racing Fixed Odds → Horse Racing Tote → Poker Cash → Poker Tournament.
-- **Operator groups** (Operator group share chart) get `series-1`…`series-7`
-  by rank (biggest group first); the 8th-and-smaller groups fold into
-  `series-other` labeled "Other".
-- **Operators** (Compare-operators trend + swatches in that filter, and the
-  highlighted bars in the leaderboard) get a class from a stable hash of the
-  operator's name, so a given operator keeps its color regardless of which
-  other operators are selected alongside it.
+  `series-1`…`series-7` in the fixed order Casino → Sportsbetting → Virtuals →
+  Horse Racing Fixed Odds → Horse Racing Tote → Poker Cash → Poker Tournament.
+- **Operators** (Operator share chart, compare-operators trend + swatches in
+  that filter, the vs.-market indexed chart, and the highlighted bars in the
+  leaderboard) all get a class from a stable hash of the operator's name, so
+  a given operator keeps the same color in every chart on the page and
+  regardless of which other operators are selected alongside it. On the
+  Operator share chart, the 8th-and-smaller operators by volume fold into
+  `series-other` labeled "Other"; the "Market (all operators)" reference
+  line on the vs.-market chart also uses `series-other`, since it's context
+  rather than an entity being compared.
 
 **Sequential** (`seq-100` … `seq-700`) — magnitude, one hue (blue), light→dark.
 Used only by the vertical × channel heatmap; a cell's value is bucketed into

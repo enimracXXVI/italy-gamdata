@@ -149,6 +149,16 @@ export function compareMatrix(records, operator, verticalOrder, channelOrder, me
   return { rows, cols, matrix };
 }
 
+/** Rebases a value series to 100 at its first non-zero point, so an operator
+ * and the overall market can be compared on the same axis regardless of
+ * their actual size — "is this operator growing faster than the market?" */
+export function indexSeries(values) {
+  const baseIdx = values.findIndex((v) => typeof v === "number" && v !== 0);
+  if (baseIdx === -1) return values.map(() => null);
+  const base = values[baseIdx];
+  return values.map((v) => (typeof v === "number" ? (v / base) * 100 : null));
+}
+
 export function totalsByMonth(records, months, metric) {
   return months.map((m) => sum(records.filter((r) => r.key === m.key), metric));
 }

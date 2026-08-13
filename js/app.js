@@ -2,7 +2,7 @@
 // bar, and re-render every chart/tile whenever the filter state changes.
 
 import {
-  loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
+  loadRecords, distinctMonths, distinctOperators, distinctVerticals, findDuplicateRows, CHANNEL_ORDER,
 } from "./data.js";
 import * as Agg from "./aggregate.js";
 import * as Charts from "./charts.js";
@@ -15,9 +15,10 @@ const lastUpdatedEl = document.getElementById("last-updated");
 
 const cards = {
   verticalTrend: document.getElementById("card-vertical-trend"),
-  groupShare: document.getElementById("card-group-share"),
+  operatorShare: document.getElementById("card-group-share"),
   leaderboard: document.getElementById("card-leaderboard"),
   compareTrend: document.getElementById("card-compare-trend"),
+  compareIndexed: document.getElementById("card-compare-indexed"),
   compareMatrix: document.getElementById("card-compare-matrix"),
 };
 
@@ -77,7 +78,18 @@ async function boot() {
     showStatus("error", "The sheet loaded but had no usable rows.", "Check that the column headers match what the dashboard expects.");
     return;
   }
-  hideStatus();
+
+  const dupes = findDuplicateRows(records);
+  if (dupes) {
+    const top = dupes.months[0];
+    const restCount = dupes.months.length - 1;
+    const detail = restCount > 0
+      ? `Worst: ${top.label} has ${top.count} operator/vertical/channel combos entered more than once (plus smaller repeats in ${restCount} other month${restCount === 1 ? "" : "s"}). Totals for those months are inflated until the extra rows are removed from the sheet.`
+      : `${top.label} has ${top.count} operator/vertical/channel combos entered more than once. Totals for that month are inflated until the extra rows are removed from the sheet.`;
+    showStatus("warning", `Data quality: ${dupes.rowCount} duplicate rows found`, detail);
+  } else {
+    hideStatus();
+  }
 
   const allMonths = distinctMonths(records);
   const operators = distinctOperators(records);
@@ -139,7 +151,7 @@ async function boot() {
       options: [
         { key: "ggr", label: "GGR" },
         { key: "turnover", label: "Turnover" },
-        { key: "hold", label: "Hold %" },
+        { key: "hold", label: "Margin %" },
       ],
       selected: { value: state.metric },
       onChange: (key) => { state.metric = key; render(); },
@@ -161,35 +173,44 @@ async function boot() {
     );
   }
 
+  // MoM: latest-vs-prior month totals for a metric, restricted to `months` (the
+  // current date-range filter). YoY: latest month vs the same calendar month
+  // one year earlier, ignoring the date-range filter (it needs a prior year
+  // to exist in the full dataset, not just in the selected range).
+  function momPercent(filtered, months, metric) {
+    const totals = Agg.totalsByMonth(filtered, months, metric);
+    const latest = totals[totals.length - 1] ?? null;
+    const prev = totals.length > 1 ? totals[totals.length - 2] : null;
+    if (latest === null || prev === null || prev === 0) return null;
+    return ((latest - prev) / Math.abs(prev)) * 100;
+  }
+  function yoyPercent(filtered, months, metric) {
+    const latestMonthKey = months[months.length - 1]?.key;
+    if (!latestMonthKey) return null;
+    const latest = Agg.totalsByMonth(filtered, months, metric).at(-1) ?? null;
+    const [y, mm] = latestMonthKey.split("-").map(Number);
+    const yoyKey = `${y - 1}-${String(mm).padStart(2, "0")}`;
+    if (!allMonths.some((m) => m.key === yoyKey) || latest === null) return null;
+    const yoyVal = Agg.sum(
+      records.filter((r) => r.key === yoyKey && state.verticals.has(r.vertical) && state.channels.has(r.channel)),
+      metric
+    );
+    return yoyVal ? ((latest - yoyVal) / Math.abs(yoyVal)) * 100 : null;
+  }
+
   function renderKPIs(filtered, months) {
     kpiRow.innerHTML = "";
-    const totals = Agg.totalsByMonth(filtered, months, state.metric);
-    const latest = totals[totals.length - 1] ?? 0;
-    const prev = totals.length > 1 ? totals[totals.length - 2] : null;
-    const momPct = prev !== null && prev !== 0 ? ((latest - prev) / Math.abs(prev)) * 100 : null;
-
-    const latestMonthKey = months[months.length - 1]?.key;
-    let yoyPct = null;
-    if (latestMonthKey) {
-      const [y, mm] = latestMonthKey.split("-").map(Number);
-      const yoyKey = `${y - 1}-${mm.toString().padStart(2, "0")}`;
-      const yoyIdx = allMonths.findIndex((m) => m.key === yoyKey);
-      if (yoyIdx >= 0) {
-        const yoyVal = Agg.sum(records.filter((r) => r.key === yoyKey && state.verticals.has(r.vertical) && state.channels.has(r.channel)), state.metric);
-        if (yoyVal) yoyPct = ((latest - yoyVal) / Math.abs(yoyVal)) * 100;
-      }
-    }
 
     const totalGGR = Agg.sum(filtered, "ggr");
     const totalTurnover = Agg.sum(filtered, "turnover");
-    const blendedHold = Agg.sum(filtered, "hold");
+    const blendedMargin = Agg.sum(filtered, "hold");
     const operatorCount = new Set(filtered.map((r) => r.operator)).size;
+    const yoyPct = yoyPercent(filtered, months, state.metric);
 
-    addTile("Total GGR", Charts.formatMetric(totalGGR, "ggr"), momPct, "vs prior month", state.metric === "ggr");
-    addTile("Total Turnover", Charts.formatMetric(totalTurnover, "turnover"), null, "", false);
-    addTile("Blended hold", Charts.formatMetric(blendedHold, "hold"), null, "", false);
-    addTile(`${Charts.METRIC_LABEL[state.metric]}, latest month`, Charts.formatMetric(latest, state.metric), momPct, "MoM", true);
-    addTile("Year over year", yoyPct === null ? "—" : `${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%`, yoyPct, "vs same month last year", true);
+    addTile("Total GGR", Charts.formatMetric(totalGGR, "ggr"), momPercent(filtered, months, "ggr"), "MoM", true);
+    addTile("Total Turnover", Charts.formatMetric(totalTurnover, "turnover"), momPercent(filtered, months, "turnover"), "MoM", true);
+    addTile("Blended margin", Charts.formatMetric(blendedMargin, "hold"), momPercent(filtered, months, "hold"), "MoM", true);
+    addTile(`Year over year (${Charts.METRIC_LABEL[state.metric]})`, yoyPct === null ? "—" : `${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%`, yoyPct, "vs same month last year", true);
     addTile("Operators in view", String(operatorCount), null, "", false);
   }
 
@@ -226,7 +247,7 @@ async function boot() {
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
         title: "Market trend by vertical",
-        caption: state.metric === "hold" ? "Blended hold % per vertical, per month." : "Stacked monthly total across the selected verticals & channels.",
+        caption: state.metric === "hold" ? "Blended margin % per vertical, per month." : "Stacked monthly total across the selected verticals & channels.",
       });
       const { series } = Agg.monthlySeries(filtered, months, "vertical", state.metric, null);
       series.sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
@@ -236,21 +257,21 @@ async function boot() {
       });
     }
 
-    // --- Market overview: operator group share -----------------------------
+    // --- Market overview: operator share ------------------------------------
     {
-      const { body, tableSlot } = Charts.buildCardShell(cards.groupShare, {
-        title: "Operator group share",
-        caption: "Top 7 groups by volume; smaller groups fold into “Other”.",
+      const { body, tableSlot } = Charts.buildCardShell(cards.operatorShare, {
+        title: "Operator share",
+        caption: "Top 7 operators by volume; smaller operators fold into “Other”.",
       });
-      const topGroups = Agg.topKeysByTotal(filtered, "operatorGroup", state.metric === "hold" ? "ggr" : state.metric, 7);
-      const { series } = Agg.monthlySeries(filtered, months, "operatorGroup", state.metric, topGroups);
+      const topOperators = Agg.topKeysByTotal(filtered, "operator", state.metric === "hold" ? "ggr" : state.metric, 7);
+      const { series } = Agg.monthlySeries(filtered, months, "operator", state.metric, topOperators);
       const others = series.find((s) => s.key === "Other");
       const ranked = series.filter((s) => s.key !== "Other")
         .sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
-      const colored = ranked.map((s, i) => ({ ...s, label: s.key, colorClass: Charts.rankColorClass(i) }));
+      const colored = ranked.map((s) => ({ ...s, label: s.key, colorClass: Charts.operatorColorClass(s.key) }));
       if (others) colored.push({ ...others, label: "Other", colorClass: "series-other" });
       Charts.renderTimeSeriesChart(body, tableSlot, {
-        months, series: colored, metric: state.metric, stacked: state.metric !== "hold", seriesLabel: "Operator group",
+        months, series: colored, metric: state.metric, stacked: state.metric !== "hold", seriesLabel: "Operator",
       });
     }
 
@@ -280,6 +301,28 @@ async function boot() {
           .map((s) => ({ ...s, label: s.key, colorClass: Charts.operatorColorClass(s.key) }));
         Charts.renderTimeSeriesChart(body, tableSlot, {
           months, series, metric: state.metric, stacked: false, seriesLabel: "Operator",
+        });
+      }
+    }
+
+    // --- Compare: vs. market, indexed to 100 -------------------------------
+    {
+      const { body, tableSlot } = Charts.buildCardShell(cards.compareIndexed, {
+        title: "Compared operators vs. market",
+        caption: `Indexed to 100 at ${months[0] ? months[0].label : "the start of the range"} — a line above the dashed 100 mark is outgrowing the market, below is lagging it.`,
+      });
+      const selectedOps = [...state.operators];
+      if (selectedOps.length === 0) {
+        Charts.emptyState(body, "Select up to 6 operators above to see whether they're outgrowing or lagging the overall market.");
+        tableSlot.innerHTML = "";
+      } else {
+        const marketTotals = Agg.totalsByMonth(filtered, months, state.metric);
+        const marketSeries = { key: "Market", label: "Market (all operators)", colorClass: "series-other", values: Agg.indexSeries(marketTotals) };
+        const opSeries = Agg.operatorTrend(filtered, months, selectedOps, state.metric).map((s) => ({
+          key: s.key, label: s.key, colorClass: Charts.operatorColorClass(s.key), values: Agg.indexSeries(s.values),
+        }));
+        Charts.renderTimeSeriesChart(body, tableSlot, {
+          months, series: [marketSeries, ...opSeries], metric: "index", stacked: false, seriesLabel: "Index",
         });
       }
     }
