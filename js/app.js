@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608141555";
-import * as Agg from "./aggregate.js?v=202608141555";
-import * as Charts from "./charts.js?v=202608141555";
-import * as Quality from "./quality.js?v=202608141555";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608141555";
+} from "./data.js?v=202608141621";
+import * as Agg from "./aggregate.js?v=202608141621";
+import * as Charts from "./charts.js?v=202608141621";
+import * as Quality from "./quality.js?v=202608141621";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608141621";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -83,6 +83,7 @@ function setupTabs(initialTab, onChange = () => {}) {
 // ---------------------------------------------------------------------------
 function setupFilterSheet() {
   const fab = document.getElementById("filter-fab");
+  const fabGlyph = fab.querySelector("span");
   const backdrop = document.getElementById("filter-sheet-backdrop");
   const bar = document.getElementById("filter-bar");
   let openedViaHistory = false;
@@ -92,19 +93,26 @@ function setupFilterSheet() {
     bar.classList.toggle("filter-bar--sheet-open", open);
     backdrop.classList.toggle("filter-sheet-backdrop--visible", open);
     document.body.style.overflow = open ? "hidden" : "";
+    fab.setAttribute("aria-label", open ? "Close filters" : "Open filters");
+    fabGlyph.textContent = open ? "✕" : "⚙";
   }
-
-  fab.addEventListener("click", () => {
+  function open() {
     if (isOpen()) return;
     setOpen(true);
     history.pushState({ filterSheet: true }, "");
     openedViaHistory = true;
-  });
-  backdrop.addEventListener("click", () => {
+  }
+  function close() {
     if (!isOpen()) return;
     setOpen(false);
     if (openedViaHistory) { openedViaHistory = false; history.back(); }
-  });
+  }
+
+  // The FAB itself has to double as the close button — it stays on screen
+  // once the sheet is open (covered by the backdrop otherwise doesn't read
+  // as "tap this to dismiss"), so a click while open must close, not no-op.
+  fab.addEventListener("click", () => (isOpen() ? close() : open()));
+  backdrop.addEventListener("click", close);
   window.addEventListener("popstate", () => {
     if (isOpen()) { setOpen(false); openedViaHistory = false; }
   });

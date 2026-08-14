@@ -532,7 +532,11 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
     return;
   }
   const rowH = 26, gap = 8;
-  const marginL = 8, marginR = 64, marginT = 4, marginB = 4;
+  // A `note` appends "(N%)" after the value — needs more room on the right
+  // than a bare value does, or the combined text overflows past the card's
+  // own edge (the SVG doesn't clip text by default).
+  const hasNotes = items.some((it) => it.note);
+  const marginL = 8, marginR = hasNotes ? 130 : 64, marginT = 4, marginB = 4;
   const maxLabelChars = 24;
   const truncate = (s) => (s.length > maxLabelChars ? `${s.slice(0, maxLabelChars - 1)}…` : s);
   // Sized to the longest label actually present (capped at the truncation
@@ -556,7 +560,12 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
     const barX = marginL + labelColW;
     const total = totals[i];
 
-    const label = svgEl("text", { x: barX - 8, y: y + rowH / 2 + 4 }, "viz-bar-category-label viz-axis-label--y");
+    // Left-aligned at the card's own left edge, not right-aligned against
+    // the bar — a shared right-aligned column leaves a dead gap before any
+    // label shorter than the longest one in the set (e.g. "Casino" next to
+    // "Horse Racing Fixed Odds"); left-aligned, that same slack falls after
+    // the label instead, which reads as normal column spacing, not a gap.
+    const label = svgEl("text", { x: marginL, y: y + rowH / 2 + 4 }, "viz-bar-category-label");
     label.textContent = truncate(it.operator);
     if (it.dim) label.classList.add("viz-bar--dim");
     svg.appendChild(label);
@@ -599,7 +608,6 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
 
   clear(tableSlot);
   const segmentKeys = segmented ? items[0].segments.map((s) => s.label) : [];
-  const hasNotes = items.some((it) => it.note);
   tableSlot.appendChild(buildTable({
     caption: `${chartLabel} (${METRIC_LABEL[metric]})`,
     columns: [categoryLabel, ...segmentKeys, "Total", ...(hasNotes ? ["% of total"] : [])],

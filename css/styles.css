@@ -196,6 +196,18 @@ h1, h2, h3, p { margin: 0; }
 
 button { font-family: inherit; }
 
+/* The `hidden` attribute means "not rendered, full stop" — but its native
+   UA-stylesheet `display: none` is the *lowest*-priority rule there is, so
+   any author class that sets `display` on the same element (`.filter-option
+   { display: flex }`, `.dashboard-section { display: flex }`, …) silently
+   wins and the element stays visible despite `hidden` being set. This bit
+   the search filter (rows never actually disappeared — only their `.hidden`
+   *property* was ever right, not what got rendered) and the "no operators
+   picked yet" section (same mechanism) before this rule existed. `!important`
+   is deliberate: nothing should ever need to override `hidden` meaning
+   hidden, so this is a hard invariant, not a specificity race. */
+[hidden] { display: none !important; }
+
 /* --------------------------------------------------------------------------
    4. Header
    -------------------------------------------------------------------------- */
@@ -317,7 +329,6 @@ button { font-family: inherit; }
   flex-direction: column;
   gap: var(--space-6);
 }
-.tab-panel[hidden] { display: none; }
 
 .dashboard-section {
   display: flex;
@@ -438,7 +449,6 @@ button { font-family: inherit; }
   padding: var(--space-2);
   z-index: 40;
 }
-.filter-popover[hidden] { display: none; }
 /* "Compare operators" is the one list long enough to need real room to
    navigate — both wider (long operator names + group meta don't wrap) and
    taller (fewer scroll-and-hunt steps through a ranked list of ~40+). */
@@ -460,6 +470,10 @@ button { font-family: inherit; }
 .filter-option-list {
   max-height: 280px;
   overflow-y: auto;
+  /* Without this, scrolling the list to its own top/bottom and continuing
+     to scroll "chains" the leftover wheel delta to the page underneath —
+     the popover's scroll should stay the popover's scroll. */
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
 }
@@ -726,7 +740,6 @@ button { font-family: inherit; }
   font-size: 0.75rem;
   color: var(--text-secondary);
 }
-.info-popover[hidden] { display: none; }
 
 .table-toggle {
   border: 1px solid var(--border-hairline);
@@ -800,6 +813,7 @@ button { font-family: inherit; }
 .viz-bar-category-label {
   font-size: 11.5px;
   fill: var(--text-primary);
+  text-anchor: start;
 }
 
 .viz-cell { cursor: pointer; stroke: var(--surface-card); stroke-width: 2; }
@@ -857,7 +871,6 @@ button { font-family: inherit; }
   font-size: 0.75rem;
   max-width: 260px;
 }
-.tooltip[hidden] { display: none; }
 .tooltip__title {
   font-weight: 700;
   color: var(--text-primary);
@@ -957,6 +970,7 @@ button { font-family: inherit; }
     top: auto;
     max-height: 80vh;
     overflow-y: auto;
+    overscroll-behavior: contain;
     flex-direction: column;
     align-items: stretch;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
@@ -992,10 +1006,12 @@ button { font-family: inherit; }
   .kpi-row { grid-template-columns: 1fr 1fr; }
   .stat-tile__value { font-size: 1.5rem; }
   .app-header__updated { display: none; }
-  /* Title + tab switcher no longer fight for one row's width — the title
-     gets its own line above instead of wrapping mid-word, and the nav
-     stays a single tidy pill instead of ballooning the header's height. */
-  .app-header__row { flex-wrap: wrap; }
+  /* Title and tab switcher share one row at every width — "Italy Gamdata"
+     is short enough, and the tab pill compact enough (nowrap + tightened
+     here), that there's no need to give up the row and stack them. */
+  .app-header__title { font-size: 1.0625rem; }
+  .app-header__row { gap: var(--space-2); }
+  .tab-nav__item { padding: 5px 6px; font-size: 0.6875rem; }
 }
 
 .delta-glyph-up::before { content: "\25B2"; }

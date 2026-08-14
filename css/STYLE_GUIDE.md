@@ -11,6 +11,21 @@ token block at the top of `styles.css` — everything else references a
 `var(--token)` or, for SVG marks, one of the `series-*` / `seq-*` utility
 classes (§7).
 
+**`[hidden] { display: none !important; }`** is a global rule near the top
+of the file (§3). Setting an element's `.hidden` property in JS is the only
+way anything in this codebase gets hidden — never a class, never inline
+`display`. This exists because the native `[hidden]` UA-stylesheet rule is
+the *lowest*-priority rule there is: any author class on the same element
+that sets `display` (`.filter-option { display: flex }`,
+`.dashboard-section { display: flex }`, …) used to win silently, leaving the
+element `hidden` in the DOM sense but still fully rendered. That's a real
+bug this app shipped twice — the "operator search doesn't filter" report
+(rows' `.hidden` was being set correctly; they just never actually
+disappeared) and "Operator compare doesn't collapse" were both this, not
+the JS logic either report blamed. The global rule closes the whole bug
+class rather than requiring every future toggleable element to remember an
+explicit `.foo[hidden]` override.
+
 ---
 
 ## 1. Color tokens
@@ -81,7 +96,7 @@ every one of these classes going forward.
 | `.app-header` | Sticky top bar | `index.html` `<header>` |
 | `.app-header__row` | Max-width flex row inside the header | same |
 | `.app-header__titles` | Wraps the `<h1>` | same |
-| `.app-header__title` | "Italy Gaming Market" | same |
+| `.app-header__title` | "Italy Gamdata" — a text placeholder for a future logo, kept short deliberately: it has to share one row with the tab switcher at every width, including narrow phones, rather than wrap or push the switcher to its own line | same |
 | `.tab-nav` / `.tab-nav__item` / `--active` | Dashboard ↔ Data Quality switcher in the header. Same `:not(--active):hover` scoping as the segmented control | header, `app.js` `setupTabs()` |
 | `.tab-nav__item-badge` | Small count pill on the "Data Quality" tab button — active (non-dismissed) finding count. Removed entirely when the count is 0 | `app.js` `updateQualityBadge()` |
 | `.app-header__actions` | Right-side cluster (just the last-updated text now) | same |
@@ -111,7 +126,7 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-trigger__chevron` | The ▾ glyph |
 | `.filter-popover` / `--wide` | The dropdown panel; `--wide` variant for the operator picker (has a meta column, and is sized larger — 420–480px wide, 420px option-list height — since it's the one list long enough that cramped navigation actually hurts) |
 | `.filter-search` | Text input at the top of a popover with >8 options (Vertical, Operator) |
-| `.filter-option-list` | Scrollable list of checkboxes inside a popover |
+| `.filter-option-list` | Scrollable list of checkboxes inside a popover. `overscroll-behavior: contain` stops scrolling past its own top/bottom from "chaining" into a scroll of the page underneath (same fix applied to the mobile sheet's own `#filter-bar` scroll) |
 | `.filter-option` | One checkbox row |
 | `.filter-option--disabled` | Dimmed state once a `max` cap (operators: 6) is reached |
 | `.filter-option__swatch` | Small color square before a vertical/operator name, tied to its `series-N` |
@@ -130,7 +145,7 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-date-select--year` | Narrower fixed width for the Year select specifically, since Month needs more room for names like "September" |
 | `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle, the Operator share card's local GGR/Turnover and Stacked/Lines toggles, and the Operator leaderboard's Total/By channel/By vertical toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click. `:disabled` (used by the leaderboard toggle when a split mode doesn't apply to the current filters) is muted and non-interactive but stays visible with a `title` tooltip explaining why, rather than vanishing |
 | `.filter-reset` | "Reset filters" text button, right-aligned |
-| `.filter-fab` | Mobile-only floating button (bottom-right, hidden ≥860px) that opens the filter bar as a bottom sheet — see the note below |
+| `.filter-fab` | Mobile-only floating button (bottom-right, hidden ≥860px) that toggles the filter bar's bottom sheet — see the note below. Stays on screen (and on top: `z-index` above the sheet) while the sheet is open specifically so it can double as the close button; its glyph swaps ⚙ ↔ ✕ to signal which tap it's about to do |
 | `.filter-sheet-backdrop` / `--visible` | Full-viewport dimming layer behind the open sheet; also closes it on click |
 | `.filter-bar--sheet-open` | Applied to `#filter-bar` itself while the mobile sheet is open — slides it in via `transform: translateY(...)` |
 
@@ -256,8 +271,8 @@ and scales via CSS width, so one code path serves desktop and mobile.
 | `.viz-bar` | A leaderboard bar — a single rounded rect in "Total" mode, or one rect per segment (square-cornered, see `.viz-bar-segment`) in the By channel/By vertical modes |
 | `.viz-bar-segment` | Added alongside `.viz-bar` for each piece of a multi-segment (stacked) bar; adds the thin surface-colored gap stroke between segments |
 | `.viz-bar--dim` | Applied to a bar/area/label when its legend entry is toggled off, or (leaderboard split modes only) to every row whose operator isn't in the "Compare operators" set — segment colors there are fixed to channel/vertical identity, not operator identity, so dimming the whole row is how those modes show emphasis instead |
-| `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) — optionally followed by `(N%)` when an item carries a `note` (e.g. the single-month Market trend breakdown adds each vertical's % of the total alongside its € figure) |
-| `.viz-bar-category-label` | The row's category name to the left of a bar — an operator name for the Operator leaderboard, but `renderBarChart` (`js/charts.js`) is generic: any caller can hand it `{ operator: <any label>, segments }` rows and pass `categoryLabel`/`chartLabel` to relabel the axis/table/aria-text for what those rows actually are. Its column width (`labelColW`) is sized to the longest label actually present (capped at the same width the old fixed constant used) rather than a flat constant — a fixed-width column left a dead gap between the card's left edge and short labels like "Casino" or a single operator name |
+| `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) — optionally followed by `(N%)` when an item carries a `note` (e.g. the single-month Market trend breakdown adds each vertical's % of the total alongside its € figure). `renderBarChart` widens its own right margin (`marginR`, 64px → 130px) whenever any item has a `note`, since the longer combined text overflowed past the card's own edge at the old margin — the SVG doesn't clip content by default |
+| `.viz-bar-category-label` | The row's category name to the left of a bar — an operator name for the Operator leaderboard, but `renderBarChart` (`js/charts.js`) is generic: any caller can hand it `{ operator: <any label>, segments }` rows and pass `categoryLabel`/`chartLabel` to relabel the axis/table/aria-text for what those rows actually are. Left-aligned (`text-anchor: start`) at the card's left edge, not right-aligned against the bar — a right-aligned shared column left a dead gap before any label shorter than the longest one in the set (e.g. "Casino" next to "Horse Racing Fixed Odds"); left-aligned, that same slack falls after the label instead, reading as normal column spacing rather than a gap. Its column width (`labelColW`) is still sized to the longest label actually present (capped at the same width the old fixed constant used), so the bars all still start at one consistent x regardless of alignment |
 | `.viz-cell` | One heatmap cell (vertical × channel) |
 | `.viz-cell-label` | The value text inside a cell |
 | `.viz-heatmap-row-label` / `-col-label` | Row (vertical) / column (channel) headers on a heatmap |
