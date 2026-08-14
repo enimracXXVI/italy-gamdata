@@ -424,7 +424,6 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
 
   if (stacked) {
     let cumulative = months.map(() => 0);
-    const lastIdx = months.length - 1;
     for (const s of series) {
       const topPts = months.map((_, i) => {
         cumulative[i] += s.values[i] || 0;
@@ -435,26 +434,6 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
       const bottom = months.map((_, i) => `${xFor(i)},${yFor(bottomPts[i])}`).reverse().join(" L ");
       const d = `M ${top} L ${bottom} Z`;
       plotGroup.appendChild(svgEl("path", { d }, `viz-area viz-area-stack-gap ${s.colorClass}`));
-
-      // Direct label at the last point, so a band's actual value is legible
-      // regardless of where it sits in the stack — a bottom band anchored to
-      // a flat 0 baseline reads as visually "calmer" than one riding a
-      // wobbling baseline above it even when it's the larger of the two, so
-      // position alone can't be trusted to convey magnitude. Skipped when
-      // the band's too thin at that point to hold a label without clashing
-      // with its neighbors.
-      const bandTopY = yFor(topPts[lastIdx]);
-      const bandBottomY = yFor(bottomPts[lastIdx]);
-      if (bandBottomY - bandTopY >= 16 && s.values[lastIdx] > 0) {
-        const text = formatMetric(s.values[lastIdx], metric);
-        const cy = (bandTopY + bandBottomY) / 2;
-        const labelX = xFor(lastIdx) - 6;
-        const approxW = text.length * 6.3 + 10;
-        plotGroup.appendChild(svgEl("rect", { x: labelX - approxW, y: cy - 9, width: approxW, height: 18, rx: 4 }, "viz-stack-label-bg"));
-        const lbl = svgEl("text", { x: labelX - 5, y: cy + 4, "text-anchor": "end" }, "viz-stack-label");
-        lbl.textContent = text;
-        plotGroup.appendChild(lbl);
-      }
     }
   } else {
     for (const s of series) {

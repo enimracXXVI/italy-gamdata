@@ -65,7 +65,7 @@ function hideStatus() { statusBanner.hidden = true; }
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
-function setupTabs() {
+function setupTabs(initialTab, onChange = () => {}) {
   const dashboardBtn = document.getElementById("tab-btn-dashboard");
   const qualityBtn = document.getElementById("tab-btn-quality");
   const dashboardPanel = document.getElementById("tab-panel-dashboard");
@@ -76,9 +76,11 @@ function setupTabs() {
     qualityPanel.hidden = isDashboard;
     dashboardBtn.classList.toggle("tab-nav__item--active", isDashboard);
     qualityBtn.classList.toggle("tab-nav__item--active", !isDashboard);
+    onChange(tab);
   }
   dashboardBtn.addEventListener("click", () => activate("dashboard"));
   qualityBtn.addEventListener("click", () => activate("quality"));
+  if (initialTab === "quality") activate("quality");
 }
 
 // ---------------------------------------------------------------------------
@@ -295,7 +297,6 @@ async function boot() {
 
   const qualityChecks = Quality.runAllChecks(records);
   renderQualityTab(qualityChecks);
-  setupTabs();
   updateQualityBadge(qualityChecks);
 
   const allMonths = distinctMonths(records);
@@ -305,16 +306,65 @@ async function boot() {
 
   lastUpdatedEl.textContent = `Data through ${allMonths[allMonths.length - 1].label}`;
 
+  // --- URL state persistence ------------------------------------------------
+  // Every filter/view is reflected in the query string (via history.replace-
+  // State, so filtering doesn't spam browser history) and read back on load,
+  // so a copy-pasted link reproduces the exact view. Unknown/stale values
+  // (an old link after data changes shape) fall back to defaults instead of
+  // throwing.
+  const monthKeySet = new Set(allMonths.map((m) => m.key));
+  const operatorNameSet = new Set(operators.map((o) => o.operator));
+  const VALID_METRICS = new Set(["ggr", "turnover", "hold", "share"]);
+  const VALID_BASIS = new Set(["ggr", "turnover"]);
+  const VALID_LEADERBOARD_MODES = new Set(["total", "channel", "vertical"]);
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlFrom = urlParams.get("from");
+  const urlTo = urlParams.get("to");
+  const urlVerticals = urlParams.getAll("v").filter((v) => verticalOrder.includes(v));
+  const urlChannels = urlParams.getAll("ch").filter((c) => channelOrder.includes(c));
+  const urlOperators = urlParams.getAll("op").filter((o) => operatorNameSet.has(o)).slice(0, 6);
+  const urlMetric = urlParams.get("metric");
+  const urlBasis = urlParams.get("basis");
+  const urlLeaderboardMode = urlParams.get("lb");
+  const urlTab = urlParams.get("tab");
+
   const state = {
-    from: allMonths[0].key,
-    to: allMonths[allMonths.length - 1].key,
-    verticals: new Set(verticalOrder),
-    channels: new Set(channelOrder),
-    operators: new Set(),
-    metric: "ggr",
-    operatorShareBasis: "ggr",
-    leaderboardMode: "total",
+    from: urlFrom && monthKeySet.has(urlFrom) ? urlFrom : allMonths[0].key,
+    to: urlTo && monthKeySet.has(urlTo) ? urlTo : allMonths[allMonths.length - 1].key,
+    verticals: urlVerticals.length ? new Set(urlVerticals) : new Set(verticalOrder),
+    channels: urlChannels.length ? new Set(urlChannels) : new Set(channelOrder),
+    operators: new Set(urlOperators),
+    metric: urlMetric && VALID_METRICS.has(urlMetric) ? urlMetric : "ggr",
+    operatorShareBasis: urlBasis && VALID_BASIS.has(urlBasis) ? urlBasis : "ggr",
+    leaderboardMode: urlLeaderboardMode && VALID_LEADERBOARD_MODES.has(urlLeaderboardMode) ? urlLeaderboardMode : "total",
   };
+  if (state.from > state.to) { state.from = allMonths[0].key; state.to = allMonths[allMonths.length - 1].key; }
+
+  let activeTab = urlTab === "quality" ? "quality" : "dashboard";
+
+  function syncURL() {
+    const params = new URLSearchParams();
+    params.set("from", state.from);
+    params.set("to", state.to);
+    if (state.verticals.size !== verticalOrder.length) {
+      for (const v of verticalOrder) if (state.verticals.has(v)) params.append("v", v);
+    }
+    if (state.channels.size !== channelOrder.length) {
+      for (const c of channelOrder) if (state.channels.has(c)) params.append("ch", c);
+    }
+    // Iterate the Set directly (not the master operator list) to preserve
+    // selection order — that's what the compare-color assignment keys off.
+    for (const op of state.operators) params.append("op", op);
+    if (state.metric !== "ggr") params.set("metric", state.metric);
+    if (state.operatorShareBasis !== "ggr") params.set("basis", state.operatorShareBasis);
+    if (state.leaderboardMode !== "total") params.set("lb", state.leaderboardMode);
+    if (activeTab !== "dashboard") params.set("tab", activeTab);
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }
+
+  setupTabs(activeTab, (tab) => { activeTab = tab; syncURL(); });
 
   buildFilterBar();
   render();
@@ -323,13 +373,43 @@ async function boot() {
     return allMonths.filter((m) => m.key >= state.from && m.key <= state.to);
   }
 
+  // Operators are ordered by Online Sportsbetting GGR within the currently
+  // selected date range — recomputed whenever the date range changes, since
+  // that's the one ranking criterion the user asked for regardless of what
+  // Vertical/Channel filters are active elsewhere.
+  function rankedOperatorOptions() {
+    const rankingPool = records.filter((r) =>
+      r.key >= state.from && r.key <= state.to && r.vertical === "Sportsbetting" && r.channel === "Online"
+    );
+    const ranked = Agg.topKeysByTotal(rankingPool, "operator", "ggr", operators.length);
+    const rankIndex = new Map(ranked.map((op, i) => [op, i]));
+    return [...operators]
+      .sort((a, b) => {
+        const ra = rankIndex.has(a.operator) ? rankIndex.get(a.operator) : Infinity;
+        const rb = rankIndex.has(b.operator) ? rankIndex.get(b.operator) : Infinity;
+        return ra - rb;
+      })
+      .map((o) => ({
+        key: o.operator, label: o.operator, meta: o.group, colorClass: Charts.operatorColorClass(o.operator),
+      }));
+  }
+
   function buildFilterBar() {
     filterBar.innerHTML = "";
+
+    let operatorSelect;
 
     const dateRange = createDateRangeControl({
       months: allMonths,
       value: { from: state.from, to: state.to },
-      onChange: (v) => { state.from = v.from; state.to = v.to; render(); },
+      onChange: (v) => {
+        state.from = v.from;
+        state.to = v.to;
+        // Guarded: this fires once synchronously during construction, before
+        // operatorSelect (built right after) exists yet.
+        if (operatorSelect) operatorSelect.setOptions(rankedOperatorOptions());
+        render();
+      },
     });
 
     const verticalSelect = createMultiSelect({
@@ -346,11 +426,9 @@ async function boot() {
       onChange: () => render(),
     });
 
-    const operatorSelect = createMultiSelect({
+    operatorSelect = createMultiSelect({
       label: "Compare operators",
-      options: operators.map((o) => ({
-        key: o.operator, label: o.operator, meta: o.group, colorClass: Charts.operatorColorClass(o.operator),
-      })),
+      options: rankedOperatorOptions(),
       selected: state.operators,
       max: 6,
       onChange: () => render(),
@@ -452,6 +530,15 @@ async function boot() {
   }
 
   function render() {
+    // Each card below is cleared then rebuilt in sequence (not diffed), so
+    // partway through a render the document is transiently shorter than
+    // both its start and end height. If the page is scrolled past that
+    // transient height, the browser clamps scrollY down right then — and
+    // does not bring it back up once the content regrows, even though the
+    // final height matches where you started. Save/restore around the
+    // whole rebuild so a filter tweak never silently yanks the viewport.
+    const scrollYBeforeRender = window.scrollY;
+
     const filtered = Agg.filterRecords(records, state);
     const months = monthsInRange();
 
@@ -523,32 +610,30 @@ async function boot() {
         selected: { value: state.operatorShareBasis },
         onChange: (key) => { state.operatorShareBasis = key; render(); },
       });
-      // Picking specific operators here reuses the existing "Compare
-      // operators" filter rather than adding a second, separate picker —
-      // when it's non-empty this chart shows exactly those operators (up to
-      // 6) instead of auto-detecting the top 7 by volume.
-      const manualOps = [...state.operators];
-      const usingManualOps = manualOps.length > 0;
       const basisLabel = state.operatorShareBasis === "turnover" ? "Turnover" : "GGR";
       const { body, tableSlot } = Charts.buildCardShell(cards.operatorShare, {
         title: "Operator share",
-        caption: (usingManualOps
-          ? `Your ${manualOps.length} selected operator(s)' % share of total ${basisLabel}, per month — pick operators via "Compare operators" above; clear it to fall back to the top 7 automatically.`
-          : `Top 7 operators' % share of total ${basisLabel}, per month — pick specific operators instead via "Compare operators" above.`)
-          + " Independent of the GGR/Turnover/Margin/Share toggle above, which scopes the rest of the dashboard.",
+        caption: `Top 7 operators (ranked by Online Sportsbetting GGR over the selected date range, regardless of the Vertical/Channel filters above) — their % share of total ${basisLabel}, per month. Independent of the GGR/Turnover/Margin/Share toggle above, which scopes the rest of the dashboard.`,
         extra: shareBasisToggle.el,
       });
+      // "Top 7" is always auto-detected — ranked by Online Sportsbetting GGR
+      // specifically, over the current date range only, so the same set of
+      // operators shows up regardless of whatever Vertical/Channel filters
+      // are active elsewhere on the page (Sportsbetting/Online is the
+      // market's flagship vertical, and a stable ranking criterion keeps
+      // this chart's operator set from reshuffling every time the Vertical
+      // filter changes). What's actually *plotted* for those 7 operators
+      // still respects the current filters, same as everywhere else.
+      const rankingPool = records.filter((r) => r.key >= state.from && r.key <= state.to && r.vertical === "Sportsbetting" && r.channel === "Online");
+      const topOperators = Agg.topKeysByTotal(rankingPool, "operator", "ggr", 7);
       const groupMetric = state.operatorShareBasis === "turnover" ? "turnover" : "ggr";
-      const topOperators = usingManualOps ? manualOps : Agg.topKeysByTotal(filtered, "operator", groupMetric, 7);
       const { series } = Agg.monthlySeries(filtered, months, "operator", groupMetric, topOperators);
       const others = series.find((s) => s.key === "Other");
       // Descending here only decides color rank (biggest = slot 1/blue) —
       // kept separate from stacking order, below.
       const ranked = series.filter((s) => s.key !== "Other")
         .sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
-      const withColor = usingManualOps
-        ? ranked.map((s) => ({ ...s, label: s.key, colorClass: compareColorMap.get(s.key) }))
-        : ranked.map((s, i) => ({ ...s, label: s.key, colorClass: Charts.rankColorClass(i) }));
+      const withColor = ranked.map((s, i) => ({ ...s, label: s.key, colorClass: Charts.rankColorClass(i) }));
       // Stack ascending (smallest first/bottom, biggest last/top — see the
       // Market trend chart for why); "Other" anchors the bottom as a neutral
       // base rather than sitting on top of the biggest named operator.
@@ -566,7 +651,7 @@ async function boot() {
       // quantity (GGR/Turnover) — not Margin %/Share %, which aren't sums
       // of their rows. Each split mode also needs 2+ of its own dimension
       // currently selected in the filters, or there's nothing to split.
-      // Falls back to "As is" automatically if a filter change invalidates
+      // Falls back to "Total" automatically if a filter change invalidates
       // the mode currently selected, rather than rendering something wrong.
       const splitEligible = state.metric === "ggr" || state.metric === "turnover";
       const channelSplitValid = splitEligible && state.channels.size > 1;
@@ -577,7 +662,7 @@ async function boot() {
       const disabledReason = !splitEligible ? "Only available for GGR or Turnover" : undefined;
       const modeToggle = createSegmented({
         options: [
-          { key: "total", label: "As is" },
+          { key: "total", label: "Total" },
           {
             key: "channel", label: "By channel", disabled: !channelSplitValid,
             title: disabledReason || (!channelSplitValid ? "Select both Online and Retail in the Channel filter to use this" : undefined),
@@ -717,6 +802,10 @@ async function boot() {
       }));
       Charts.renderHeatmapGrid(body, tableSlot, { panels, metric: state.metric });
     }
+
+    syncURL();
+
+    if (window.scrollY !== scrollYBeforeRender) window.scrollTo(window.scrollX, scrollYBeforeRender);
   }
 }
 

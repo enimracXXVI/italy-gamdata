@@ -48,8 +48,11 @@ regardless of what else is selected. Per operator, `app.js` builds a
 `compareColorMap` once per render from `[...state.operators]`'s *selection
 order* (`Charts.rankColorClass(index)`) and reuses it everywhere an operator
 identity needs a color in that render pass (Compared-operators trend,
-vs.-market, the leaderboard's highlighted rows, Operator share when it's
-showing your manually-picked operators). `charts.js` still exports a
+vs.-market, the leaderboard's highlighted rows). Operator share is separate:
+it's never wired to "Compare operators" — it always auto-picks the top 7 by
+Online Sportsbetting GGR within the selected date range (regardless of the
+Vertical/Channel filters elsewhere) and colors that ranking with
+`rankColorClass` in ranked order. `charts.js` still exports a
 `operatorColorClass(name)` stable-hash function, but it's used only for the
 "Compare operators" *picker's* preview swatches (a static list of every
 possible choice, not a set of entities being actively compared side by
@@ -107,7 +110,7 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-trigger--active` | Applied while that control's popover is open. Same `:not(.filter-trigger--active):hover` scoping as the segmented control, for the same reason |
 | `.filter-trigger__count` | Small numeric badge on the trigger (e.g. "6") |
 | `.filter-trigger__chevron` | The ▾ glyph |
-| `.filter-popover` / `--wide` | The dropdown panel; `--wide` variant for the operator picker (has a meta column) |
+| `.filter-popover` / `--wide` | The dropdown panel; `--wide` variant for the operator picker (has a meta column, and is sized larger — 420–480px wide, 420px option-list height — since it's the one list long enough that cramped navigation actually hurts) |
 | `.filter-search` | Text input at the top of a popover with >8 options (Vertical, Operator) |
 | `.filter-option-list` | Scrollable list of checkboxes inside a popover |
 | `.filter-option` | One checkbox row |
@@ -122,8 +125,36 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-preset__check` | The ✓ mark, visible only on `.filter-preset--selected` |
 | `.filter-preset-custom` | Footer row holding the two custom month `<select>`s |
 | `.filter-date-select` | Each of those two `<select>` elements |
-| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle, the Operator share card's local GGR/Turnover toggle, and the Operator leaderboard's As is/By channel/By vertical toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click. `:disabled` (used by the leaderboard toggle when a split mode doesn't apply to the current filters) is muted and non-interactive but stays visible with a `title` tooltip explaining why, rather than vanishing |
+| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle, the Operator share card's local GGR/Turnover toggle, and the Operator leaderboard's Total/By channel/By vertical toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click. `:disabled` (used by the leaderboard toggle when a split mode doesn't apply to the current filters) is muted and non-interactive but stays visible with a `title` tooltip explaining why, rather than vanishing |
 | `.filter-reset` | "Reset filters" text button, right-aligned |
+
+**Every filter/view choice is reflected in the URL** (`app.js` `syncURL()` /
+the `urlParams` block in `boot()`), via `history.replaceState` — no history
+spam, just live-updates the current entry. Covers date range, verticals,
+channels, compare-operators (in selection order, so a shared link reproduces
+the same colors), the metric toggle, the Operator-share GGR/Turnover basis,
+the leaderboard split mode, and the active tab. Read back on load with
+validation against the current dataset (unknown month keys / operator names
+/ enum values fall back to defaults instead of throwing — protects against a
+stale link after the sheet's shape changes). `createDateRangeControl` was
+changed to seed itself from the `value` passed in (matching it to a preset,
+or "custom") instead of always resetting to "all time" on construction —
+that reset was silently clobbering a URL-restored range the moment the
+filter bar was built.
+
+**Scroll position is explicitly preserved across `render()`.** Every filter
+change clears and rebuilds each chart card in sequence (not diffed), so
+partway through a render the page is transiently shorter than either its
+start or end height. If the page was scrolled past that transient height,
+the browser clamps `scrollY` down right then and does **not** restore it
+once the content regrows — even though the final height matches where you
+started. `render()` saves `window.scrollY` before rebuilding and restores it
+after (`js/app.js`), which is the actual fix; `overflow-anchor: none` on
+`html`/`body` (`css/styles.css`) is kept alongside it as cheap insurance
+against unrelated anchor-driven jumps, but it was not what was causing this
+one — that turned out to be the "shrinks then clamps" behavior above, not
+scroll anchoring, which only matters for content whose *final* size differs
+from where it started.
 
 ---
 
@@ -177,12 +208,11 @@ and scales via CSS width, so one code path serves desktop and mobile.
 | `.viz-marker` | The small circle that appears on a line at the hovered month |
 | `.viz-crosshair-line` | The dashed vertical hover line |
 | `.viz-hit-rect` | Invisible pointer-capture layer (one per chart, or one per bar/cell) |
-| `.viz-bar` | A leaderboard bar — a single rounded rect in "As is" mode, or one rect per segment (square-cornered, see `.viz-bar-segment`) in the By channel/By vertical modes |
+| `.viz-bar` | A leaderboard bar — a single rounded rect in "Total" mode, or one rect per segment (square-cornered, see `.viz-bar-segment`) in the By channel/By vertical modes |
 | `.viz-bar-segment` | Added alongside `.viz-bar` for each piece of a multi-segment (stacked) bar; adds the thin surface-colored gap stroke between segments |
 | `.viz-bar--dim` | Applied to a bar/area/label when its legend entry is toggled off, or (leaderboard split modes only) to every row whose operator isn't in the "Compare operators" set — segment colors there are fixed to channel/vertical identity, not operator identity, so dimming the whole row is how those modes show emphasis instead |
 | `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) |
 | `.viz-bar-category-label` | The operator name to the left of a bar |
-| `.viz-stack-label-bg` / `.viz-stack-label` | The value chip at the right end of a stacked-area band (fixed dark chip + white text, independent of page theme — it sits on an arbitrary categorical fill color, so it needs its own contrast rather than following `--text-primary`). Only drawn when the band is tall enough at that point to hold it; this is what makes a band's value legible regardless of whether it landed at the bottom (flat baseline, reads as visually "calm") or the top of the stack |
 | `.viz-cell` | One heatmap cell (vertical × channel) |
 | `.viz-cell-label` | The value text inside a cell |
 | `.viz-heatmap-row-label` / `-col-label` | Row (vertical) / column (channel) headers on a heatmap |

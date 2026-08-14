@@ -82,45 +82,54 @@ export function createMultiSelect({ label, options, selected, max, onChange }) {
     count.style.display = selected.size > 0 ? "" : "none";
   }
 
-  // Rows are built exactly once and then mutated in place (checked/disabled/
-  // hidden) rather than torn down and rebuilt on every change. Destroying and
-  // recreating the checkbox you just clicked strips its focus, and losing
-  // focus on a removed element is a classic cause of an unwanted scroll jump
-  // — the browser hunts for somewhere sensible to refocus.
-  const rowEntries = [];
-  for (const opt of options) {
-    const row = document.createElement("label");
-    row.className = "filter-option";
+  // Rows are built once per options set and then mutated in place
+  // (checked/disabled/hidden) rather than torn down and rebuilt on every
+  // change. Destroying and recreating the checkbox you just clicked strips
+  // its focus, and losing focus on a removed element is a classic cause of
+  // an unwanted scroll jump — the browser hunts for somewhere sensible to
+  // refocus. `setOptions` (used when the ranking behind this list changes,
+  // e.g. the date range) *does* rebuild — safe there since that happens in
+  // response to a click on a *different*, unrelated control, not this
+  // list's own click handler destroying itself mid-click.
+  let rowEntries = [];
+  function buildRows(opts) {
+    list.innerHTML = "";
+    rowEntries = [];
+    for (const opt of opts) {
+      const row = document.createElement("label");
+      row.className = "filter-option";
 
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = selected.has(opt.key);
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) selected.add(opt.key); else selected.delete(opt.key);
-      refreshTrigger();
-      updateOptionStates();
-      onChange(selected);
-    });
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = selected.has(opt.key);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) selected.add(opt.key); else selected.delete(opt.key);
+        refreshTrigger();
+        updateOptionStates();
+        onChange(selected);
+      });
 
-    if (opt.colorClass) {
-      const swatch = document.createElement("span");
-      swatch.className = `filter-option__swatch ${opt.colorClass}`;
-      row.appendChild(swatch);
+      if (opt.colorClass) {
+        const swatch = document.createElement("span");
+        swatch.className = `filter-option__swatch ${opt.colorClass}`;
+        row.appendChild(swatch);
+      }
+      const textEl = document.createElement("span");
+      textEl.className = "filter-option__label";
+      textEl.textContent = opt.label;
+
+      row.append(checkbox, textEl);
+      if (opt.meta) {
+        const meta = document.createElement("span");
+        meta.className = "filter-option__meta";
+        meta.textContent = opt.meta;
+        row.appendChild(meta);
+      }
+      list.appendChild(row);
+      rowEntries.push({ opt, row, checkbox });
     }
-    const textEl = document.createElement("span");
-    textEl.className = "filter-option__label";
-    textEl.textContent = opt.label;
-
-    row.append(checkbox, textEl);
-    if (opt.meta) {
-      const meta = document.createElement("span");
-      meta.className = "filter-option__meta";
-      meta.textContent = opt.meta;
-      row.appendChild(meta);
-    }
-    list.appendChild(row);
-    rowEntries.push({ opt, row, checkbox });
   }
+  buildRows(options);
 
   function updateOptionStates(filterText) {
     const q = (filterText ?? (searchInput ? searchInput.value : "")).trim().toLowerCase();
@@ -133,7 +142,16 @@ export function createMultiSelect({ label, options, selected, max, onChange }) {
     }
   }
 
-  if (searchInput) searchInput.addEventListener("input", () => updateOptionStates(searchInput.value));
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      updateOptionStates(searchInput.value);
+      // A stale scroll position is easy to mistake for "search is broken":
+      // with all rows always in the DOM (just hidden), the one matching
+      // row can end up scrolled out of the popover's small viewport if the
+      // list was scrolled down before typing.
+      list.scrollTop = 0;
+    });
+  }
   clearBtn.addEventListener("click", () => {
     selected.clear();
     refreshTrigger();
@@ -146,7 +164,15 @@ export function createMultiSelect({ label, options, selected, max, onChange }) {
   updateOptionStates("");
 
   control.append(trigger, popover);
-  return { el: control, refresh: () => { refreshTrigger(); updateOptionStates(); } };
+  return {
+    el: control,
+    refresh: () => { refreshTrigger(); updateOptionStates(); },
+    setOptions: (newOptions) => {
+      options = newOptions;
+      buildRows(options);
+      if (searchInput) updateOptionStates(searchInput.value); else updateOptionStates("");
+    },
+  };
 }
 
 /** Date-range control: preset rows first, custom month-to-month tucked
@@ -257,12 +283,27 @@ export function createDateRangeControl({ months, value, onChange }) {
   fromSelect.addEventListener("change", onCustomChange);
   toSelect.addEventListener("change", onCustomChange);
 
+  // Initialize from whatever `value` the caller passed in (e.g. a range
+  // restored from the URL) rather than always resetting to "all time" — try
+  // to match it to a preset so the popover shows the right one checked, and
+  // fall back to "custom" if it doesn't line up with any preset window.
+  function detectPreset(from, to) {
+    for (const p of presets) {
+      if (p.id === "custom") continue;
+      const r = p.range();
+      if (r.from === from && r.to === to) return p.id;
+    }
+    return "custom";
+  }
+
   renderPresetList();
   popover.append(presetList, customRow);
   attachPopover(trigger, popover);
 
   control.append(trigger, popover);
-  apply(presets[0].range(), "all");
+  const initialFrom = value.from ?? months[0]?.key ?? null;
+  const initialTo = value.to ?? maxKey;
+  apply({ from: initialFrom, to: initialTo }, detectPreset(initialFrom, initialTo));
 
   return { el: control };
 }

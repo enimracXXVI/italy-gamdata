@@ -204,7 +204,21 @@
    -------------------------------------------------------------------------- */
 *, *::before, *::after { box-sizing: border-box; }
 
-html { color-scheme: light dark; }
+/* Every filter/metric change clears and rebuilds several chart cards in
+   place (js/charts.js clear()+rebuild, not incremental DOM diffing), and
+   reads getBoundingClientRect() mid-rebuild (measureWidth()) to size each
+   chart. Browser "scroll anchoring" exists to compensate scroll position
+   for async content changes above the fold (e.g. slow-loading ads/images)
+   — it was never a fit for this synchronous full-section-replace pattern,
+   and the mid-rebuild layout read is exactly the kind of moment it can
+   mis-anchor on, producing an unwanted scroll jump on interactions that
+   shouldn't move the viewport at all. Nothing on this page depends on the
+   browser's compensation, so it's off. The actual scrolling box for the
+   page is the root element (html), not body — body only "acts as" the
+   viewport's scroller in quirks mode — so the rule has to live on html to
+   take effect; it's also set on body in case anything ever nests its own
+   scroll container there. */
+html { color-scheme: light dark; overflow-anchor: none; }
 
 body {
   margin: 0;
@@ -212,6 +226,7 @@ body {
   background: var(--surface-page);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
+  overflow-anchor: none;
 }
 
 h1, h2, h3, p { margin: 0; }
@@ -440,7 +455,11 @@ button { font-family: inherit; }
   z-index: 40;
 }
 .filter-popover[hidden] { display: none; }
-.filter-popover--wide { min-width: 320px; }
+/* "Compare operators" is the one list long enough to need real room to
+   navigate — both wider (long operator names + group meta don't wrap) and
+   taller (fewer scroll-and-hunt steps through a ranked list of ~40+). */
+.filter-popover--wide { min-width: 420px; max-width: 480px; }
+.filter-popover--wide .filter-option-list { max-height: 420px; }
 
 .filter-search {
   width: 100%;
@@ -772,17 +791,6 @@ button { font-family: inherit; }
   stroke: var(--text-muted);
   stroke-width: 1;
   stroke-dasharray: 2 3;
-}
-/* Fixed dark chip + white text on purpose, independent of page theme: it
-   sits on top of an arbitrary categorical band color, so it needs its own
-   contrast rather than relying on --text-primary (which would go white in
-   dark mode and disappear against a light band). */
-.viz-stack-label-bg { fill: rgba(0, 0, 0, 0.55); }
-.viz-stack-label {
-  fill: #ffffff;
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 .viz-crosshair-line {
   stroke: var(--axis-line);
