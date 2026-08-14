@@ -313,6 +313,7 @@ async function boot() {
     operators: new Set(),
     metric: "ggr",
     operatorShareBasis: "ggr",
+    leaderboardMode: "total",
   };
 
   buildFilterBar();
@@ -374,6 +375,7 @@ async function boot() {
       state.operators = new Set();
       state.metric = "ggr";
       state.operatorShareBasis = "ggr";
+      state.leaderboardMode = "total";
       buildFilterBar();
       render();
     });
@@ -453,6 +455,13 @@ async function boot() {
     const filtered = Agg.filterRecords(records, state);
     const months = monthsInRange();
 
+    // Colors for the compare-set: assigned by selection order (index 0..5),
+    // never by a hash of the name. A hash into 8 slots collides constantly
+    // once you're comparing more than 2-3 operators — the whole point of
+    // "compare" breaks if two lines render identically. Position-based is
+    // collision-free by construction since the set is capped at 6.
+    const compareColorMap = new Map([...state.operators].map((op, i) => [op, Charts.rankColorClass(i)]));
+
     renderKPIs(filtered, months);
 
     // --- Market overview: trend by vertical -------------------------------
@@ -484,7 +493,14 @@ async function boot() {
         });
         const groupMetric = state.metric === "share" ? "ggr" : state.metric;
         const { series } = Agg.monthlySeries(filtered, months, "vertical", groupMetric, null);
-        series.sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
+        // Ascending total — smallest stacks first (bottom), biggest last
+        // (top). The bottom band's baseline is pinned to 0 and never moves,
+        // so it reads as visually "inert" even when it's the largest
+        // contributor; putting the biggest band's own edge against the
+        // stack's outer envelope (top) keeps it legible at a glance, and the
+        // per-band end label (below) makes the exact value unambiguous
+        // regardless of position anyway.
+        series.sort((a, b) => a.values.reduce((s, v) => s + v, 0) - b.values.reduce((s, v) => s + v, 0));
         let colored = series.map((s) => ({ ...s, label: s.key, colorClass: Charts.verticalColorClass(s.key, verticalOrder) }));
         if (state.metric === "share") colored = Agg.normalizeStackToShare(colored, months);
         Charts.renderTimeSeriesChart(body, tableSlot, {
@@ -507,19 +523,37 @@ async function boot() {
         selected: { value: state.operatorShareBasis },
         onChange: (key) => { state.operatorShareBasis = key; render(); },
       });
+      // Picking specific operators here reuses the existing "Compare
+      // operators" filter rather than adding a second, separate picker —
+      // when it's non-empty this chart shows exactly those operators (up to
+      // 6) instead of auto-detecting the top 7 by volume.
+      const manualOps = [...state.operators];
+      const usingManualOps = manualOps.length > 0;
+      const basisLabel = state.operatorShareBasis === "turnover" ? "Turnover" : "GGR";
       const { body, tableSlot } = Charts.buildCardShell(cards.operatorShare, {
         title: "Operator share",
-        caption: `Top 7 operators' % share of total ${state.operatorShareBasis === "turnover" ? "Turnover" : "GGR"}, per month — always sums to 100%. Independent of the GGR/Turnover/Margin/Share toggle above, which scopes the rest of the dashboard.`,
+        caption: (usingManualOps
+          ? `Your ${manualOps.length} selected operator(s)' % share of total ${basisLabel}, per month — pick operators via "Compare operators" above; clear it to fall back to the top 7 automatically.`
+          : `Top 7 operators' % share of total ${basisLabel}, per month — pick specific operators instead via "Compare operators" above.`)
+          + " Independent of the GGR/Turnover/Margin/Share toggle above, which scopes the rest of the dashboard.",
         extra: shareBasisToggle.el,
       });
       const groupMetric = state.operatorShareBasis === "turnover" ? "turnover" : "ggr";
-      const topOperators = Agg.topKeysByTotal(filtered, "operator", groupMetric, 7);
+      const topOperators = usingManualOps ? manualOps : Agg.topKeysByTotal(filtered, "operator", groupMetric, 7);
       const { series } = Agg.monthlySeries(filtered, months, "operator", groupMetric, topOperators);
       const others = series.find((s) => s.key === "Other");
+      // Descending here only decides color rank (biggest = slot 1/blue) —
+      // kept separate from stacking order, below.
       const ranked = series.filter((s) => s.key !== "Other")
         .sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
-      let colored = ranked.map((s) => ({ ...s, label: s.key, colorClass: Charts.operatorColorClass(s.key) }));
-      if (others) colored.push({ ...others, label: "Other", colorClass: "series-other" });
+      const withColor = usingManualOps
+        ? ranked.map((s) => ({ ...s, label: s.key, colorClass: compareColorMap.get(s.key) }))
+        : ranked.map((s, i) => ({ ...s, label: s.key, colorClass: Charts.rankColorClass(i) }));
+      // Stack ascending (smallest first/bottom, biggest last/top — see the
+      // Market trend chart for why); "Other" anchors the bottom as a neutral
+      // base rather than sitting on top of the biggest named operator.
+      let colored = [...withColor].reverse();
+      if (others) colored.unshift({ ...others, label: "Other", colorClass: "series-other" });
       colored = Agg.normalizeStackToShare(colored, months);
       Charts.renderTimeSeriesChart(body, tableSlot, {
         months, series: colored, metric: "share", stacked: true, seriesLabel: "Operator",
@@ -528,23 +562,86 @@ async function boot() {
 
     // --- Market overview: leaderboard --------------------------------------
     {
+      // Splitting a row into parts only makes sense for an additive
+      // quantity (GGR/Turnover) — not Margin %/Share %, which aren't sums
+      // of their rows. Each split mode also needs 2+ of its own dimension
+      // currently selected in the filters, or there's nothing to split.
+      // Falls back to "As is" automatically if a filter change invalidates
+      // the mode currently selected, rather than rendering something wrong.
+      const splitEligible = state.metric === "ggr" || state.metric === "turnover";
+      const channelSplitValid = splitEligible && state.channels.size > 1;
+      const verticalSplitValid = splitEligible && state.verticals.size > 1;
+      if (state.leaderboardMode === "channel" && !channelSplitValid) state.leaderboardMode = "total";
+      if (state.leaderboardMode === "vertical" && !verticalSplitValid) state.leaderboardMode = "total";
+
+      const disabledReason = !splitEligible ? "Only available for GGR or Turnover" : undefined;
+      const modeToggle = createSegmented({
+        options: [
+          { key: "total", label: "As is" },
+          {
+            key: "channel", label: "By channel", disabled: !channelSplitValid,
+            title: disabledReason || (!channelSplitValid ? "Select both Online and Retail in the Channel filter to use this" : undefined),
+          },
+          {
+            key: "vertical", label: "By vertical", disabled: !verticalSplitValid,
+            title: disabledReason || (!verticalSplitValid ? "Select more than one vertical in the Vertical filter to use this" : undefined),
+          },
+        ],
+        selected: { value: state.leaderboardMode },
+        onChange: (key) => { state.leaderboardMode = key; render(); },
+      });
+
       const { body, tableSlot } = Charts.buildCardShell(cards.leaderboard, {
         title: "Operator leaderboard",
-        caption: state.metric === "share"
+        caption: state.leaderboardMode === "channel"
+          ? "Top 15 operators, split by channel. Operators picked in “Compare operators” are highlighted (dimmed if not picked)."
+          : state.leaderboardMode === "vertical"
+          ? "Top 15 operators, split by vertical. Operators picked in “Compare operators” are highlighted (dimmed if not picked)."
+          : state.metric === "share"
           ? "Each operator's % share of total GGR over the selected range, after the vertical/channel filters above."
           : "Top 15 operators over the selected range. Operators picked in “Compare operators” are highlighted.",
+        extra: modeToggle.el,
       });
-      let items;
-      if (state.metric === "share") {
-        const marketGGR = Agg.sum(filtered, "ggr");
-        items = Agg.leaderboard(filtered, "ggr", 15).map((it) => ({
-          operator: it.operator, value: marketGGR ? (it.value / marketGGR) * 100 : 0,
+
+      let items, legend = null;
+      const hasCompareSet = state.operators.size > 0;
+
+      if (state.leaderboardMode === "channel") {
+        const segOrder = channelOrder.filter((c) => state.channels.has(c));
+        const segColors = segOrder.map((_, i) => Charts.rankColorClass(i));
+        const raw = Agg.leaderboardSegmented(filtered, state.metric, 15, "channel", segOrder);
+        items = raw.map((it) => ({
+          operator: it.operator,
+          dim: hasCompareSet && !state.operators.has(it.operator),
+          segments: segOrder.map((key, i) => ({ key, label: key, value: it.segmentValues[i], colorClass: segColors[i] })),
         }));
+        legend = segOrder.map((key, i) => ({ key, label: key, colorClass: segColors[i], swatchType: "rect" }));
+      } else if (state.leaderboardMode === "vertical") {
+        const segOrder = verticalOrder.filter((v) => state.verticals.has(v));
+        const raw = Agg.leaderboardSegmented(filtered, state.metric, 15, "vertical", segOrder);
+        items = raw.map((it) => ({
+          operator: it.operator,
+          dim: hasCompareSet && !state.operators.has(it.operator),
+          segments: segOrder.map((key, i) => ({ key, label: key, value: it.segmentValues[i], colorClass: Charts.verticalColorClass(key, verticalOrder) })),
+        }));
+        legend = segOrder.map((key) => ({ key, label: key, colorClass: Charts.verticalColorClass(key, verticalOrder), swatchType: "rect" }));
       } else {
-        items = Agg.leaderboard(filtered, state.metric, 15);
+        let base;
+        if (state.metric === "share") {
+          const marketGGR = Agg.sum(filtered, "ggr");
+          base = Agg.leaderboard(filtered, "ggr", 15).map((it) => ({
+            operator: it.operator, value: marketGGR ? (it.value / marketGGR) * 100 : 0,
+          }));
+        } else {
+          base = Agg.leaderboard(filtered, state.metric, 15);
+        }
+        items = base.map((it) => ({
+          operator: it.operator,
+          segments: [{ key: "total", label: Charts.METRIC_LABEL[state.metric], value: it.value, colorClass: compareColorMap.get(it.operator) || "seq-500" }],
+        }));
       }
-      const emphasisMap = new Map([...state.operators].map((o) => [o, Charts.operatorColorClass(o)]));
-      Charts.renderBarChart(body, tableSlot, { items, metric: state.metric, emphasisMap });
+
+      Charts.renderBarChart(body, tableSlot, { items, metric: state.metric, legend });
     }
 
     // --- Compare: trend per selected operator ------------------------------
@@ -562,14 +659,14 @@ async function boot() {
       } else if (state.metric === "share") {
         const marketTotals = Agg.totalsByMonth(filtered, months, "ggr");
         const series = Agg.operatorTrend(filtered, months, selectedOps, "ggr").map((s) => ({
-          key: s.key, label: s.key, colorClass: Charts.operatorColorClass(s.key), values: Agg.shareSeries(s.values, marketTotals),
+          key: s.key, label: s.key, colorClass: compareColorMap.get(s.key), values: Agg.shareSeries(s.values, marketTotals),
         }));
         Charts.renderTimeSeriesChart(body, tableSlot, {
           months, series, metric: "share", stacked: false, seriesLabel: "Operator",
         });
       } else {
         const series = Agg.operatorTrend(filtered, months, selectedOps, state.metric)
-          .map((s) => ({ ...s, label: s.key, colorClass: Charts.operatorColorClass(s.key) }));
+          .map((s) => ({ ...s, label: s.key, colorClass: compareColorMap.get(s.key) }));
         Charts.renderTimeSeriesChart(body, tableSlot, {
           months, series, metric: state.metric, stacked: false, seriesLabel: "Operator",
         });
@@ -595,7 +692,7 @@ async function boot() {
         const marketTotals = Agg.totalsByMonth(filtered, months, basisMetric);
         const marketSeries = { key: "Market", label: "Market (all operators)", colorClass: "series-other", values: Agg.indexSeries(marketTotals) };
         const opSeries = Agg.operatorTrend(filtered, months, selectedOps, basisMetric).map((s) => ({
-          key: s.key, label: s.key, colorClass: Charts.operatorColorClass(s.key), values: Agg.indexSeries(s.values),
+          key: s.key, label: s.key, colorClass: compareColorMap.get(s.key), values: Agg.indexSeries(s.values),
         }));
         Charts.renderTimeSeriesChart(body, tableSlot, {
           months, series: [marketSeries, ...opSeries], metric: "index", stacked: false, seriesLabel: "Index",

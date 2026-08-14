@@ -102,6 +102,35 @@ export function leaderboard(records, metric, limit) {
     .slice(0, limit);
 }
 
+/** Leaderboard broken down by an additional dimension (channel or vertical)
+ * per operator — GGR/Turnover only (an additive quantity you can actually
+ * split into parts); the caller is responsible for not offering this for
+ * Margin %/Share %, which aren't. `segmentOrder` fixes both which segment
+ * keys appear and their order (so e.g. Online always precedes Retail); a
+ * segment an operator has zero of is still included at 0, not omitted, so
+ * every row has the same segments in the same order. */
+export function leaderboardSegmented(records, metric, limit, segmentField, segmentOrder) {
+  const totals = new Map();
+  for (const r of records) {
+    const v = typeof r[metric] === "number" ? r[metric] : 0;
+    totals.set(r.operator, (totals.get(r.operator) || 0) + v);
+  }
+  const topOperators = [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([op]) => op);
+
+  return topOperators.map((operator) => {
+    const segTotals = new Map();
+    for (const r of records) {
+      if (r.operator !== operator) continue;
+      const v = typeof r[metric] === "number" ? r[metric] : 0;
+      segTotals.set(r[segmentField], (segTotals.get(r[segmentField]) || 0) + v);
+    }
+    return {
+      operator,
+      segmentValues: segmentOrder.map((key) => segTotals.get(key) || 0),
+    };
+  });
+}
+
 /** Trend per selected operator (sum across whatever verticals/channels are
  * currently filtered in), aligned to `months`. */
 export function operatorTrend(records, months, operators, metric) {
@@ -133,11 +162,18 @@ export function operatorTrend(records, months, operators, metric) {
 
 /** Vertical x Channel matrix for a single operator, summed over the filtered
  * date range. Returns { rows, cols, matrix } (matrix[row][col]). Used to
- * build one small-multiple panel per operator in the compare set. */
+ * build one small-multiple panel per operator in the compare set.
+ *
+ * rows/cols are derived from the whole (unfiltered-by-operator) `records`
+ * set, not from this operator's own rows — so every panel in a multi-operator
+ * compare has the same grid dimensions in the same order. Sizing each panel
+ * to only what that one operator happens to have breaks visual alignment the
+ * moment operators differ (e.g. one has Retail data and another doesn't). A
+ * cell an operator has no rows for just sums to 0, same as any other zero. */
 export function compareMatrix(records, operator, verticalOrder, channelOrder, metric) {
   const sub = records.filter((r) => r.operator === operator);
-  const rows = verticalOrder.filter((v) => sub.some((r) => r.vertical === v));
-  const cols = channelOrder.filter((c) => sub.some((r) => r.channel === c));
+  const rows = verticalOrder.filter((v) => records.some((r) => r.vertical === v));
+  const cols = channelOrder.filter((c) => records.some((r) => r.channel === c));
 
   const matrix = rows.map((v) =>
     cols.map((c) => {

@@ -42,11 +42,23 @@ manual toggle overriding it either way.
 | `--seq-100`…`--seq-700` | blue ramp | same | Sequential magnitude (heatmap cells) — see §7 |
 | `--accent` | = `--series-1` | = `--series-1` | Primary interactive accent: selected filter chips, active toggle, focus ring badge |
 
-**Where a color is chosen at runtime** (not a fixed token): `charts.js`
-assigns a `series-N` class per operator via a stable hash of the operator's
-name, and per vertical via its fixed position in `VERTICAL_ORDER` (`js/data.js`).
-This is deliberate — see the comment in `charts.js` — so a given operator or
-vertical always gets the same color no matter what else is selected.
+**Where a color is chosen at runtime** (not a fixed token): per vertical, via
+its fixed position in `VERTICAL_ORDER` (`js/data.js`) — always the same color
+regardless of what else is selected. Per operator, `app.js` builds a
+`compareColorMap` once per render from `[...state.operators]`'s *selection
+order* (`Charts.rankColorClass(index)`) and reuses it everywhere an operator
+identity needs a color in that render pass (Compared-operators trend,
+vs.-market, the leaderboard's highlighted rows, Operator share when it's
+showing your manually-picked operators). `charts.js` still exports a
+`operatorColorClass(name)` stable-hash function, but it's used only for the
+"Compare operators" *picker's* preview swatches (a static list of every
+possible choice, not a set of entities being actively compared side by
+side) — it used to also color the compare-set charts, but a hash into 8
+slots collides constantly once more than 2-3 operators are involved (two
+compared operators could render as the literal same color, which defeats
+the entire point of "compare"). Position-based coloring is collision-free
+by construction since the compare-set is capped at 6 and there are 8 slots;
+prefer it over the hash for any new "identity color" need.
 
 **Every `series-*`/`seq-*` class sets both an SVG color (`fill`/`stroke`) and
 `background-color`.** They're used on two different kinds of element: SVG
@@ -110,7 +122,7 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-preset__check` | The ✓ mark, visible only on `.filter-preset--selected` |
 | `.filter-preset-custom` | Footer row holding the two custom month `<select>`s |
 | `.filter-date-select` | Each of those two `<select>` elements |
-| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click |
+| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle, the Operator share card's local GGR/Turnover toggle, and the Operator leaderboard's As is/By channel/By vertical toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click. `:disabled` (used by the leaderboard toggle when a split mode doesn't apply to the current filters) is muted and non-interactive but stays visible with a `title` tooltip explaining why, rather than vanishing |
 | `.filter-reset` | "Reset filters" text button, right-aligned |
 
 ---
@@ -165,10 +177,12 @@ and scales via CSS width, so one code path serves desktop and mobile.
 | `.viz-marker` | The small circle that appears on a line at the hovered month |
 | `.viz-crosshair-line` | The dashed vertical hover line |
 | `.viz-hit-rect` | Invisible pointer-capture layer (one per chart, or one per bar/cell) |
-| `.viz-bar` | A leaderboard bar |
-| `.viz-bar--dim` | Applied to a bar/area when its legend entry is toggled off |
-| `.viz-bar-label` | The value printed at the end of a bar |
+| `.viz-bar` | A leaderboard bar — a single rounded rect in "As is" mode, or one rect per segment (square-cornered, see `.viz-bar-segment`) in the By channel/By vertical modes |
+| `.viz-bar-segment` | Added alongside `.viz-bar` for each piece of a multi-segment (stacked) bar; adds the thin surface-colored gap stroke between segments |
+| `.viz-bar--dim` | Applied to a bar/area/label when its legend entry is toggled off, or (leaderboard split modes only) to every row whose operator isn't in the "Compare operators" set — segment colors there are fixed to channel/vertical identity, not operator identity, so dimming the whole row is how those modes show emphasis instead |
+| `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) |
 | `.viz-bar-category-label` | The operator name to the left of a bar |
+| `.viz-stack-label-bg` / `.viz-stack-label` | The value chip at the right end of a stacked-area band (fixed dark chip + white text, independent of page theme — it sits on an arbitrary categorical fill color, so it needs its own contrast rather than following `--text-primary`). Only drawn when the band is tall enough at that point to hold it; this is what makes a band's value legible regardless of whether it landed at the bottom (flat baseline, reads as visually "calm") or the top of the stack |
 | `.viz-cell` | One heatmap cell (vertical × channel) |
 | `.viz-cell-label` | The value text inside a cell |
 | `.viz-heatmap-row-label` / `-col-label` | Row (vertical) / column (channel) headers on a heatmap |

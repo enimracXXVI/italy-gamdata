@@ -424,6 +424,7 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
 
   if (stacked) {
     let cumulative = months.map(() => 0);
+    const lastIdx = months.length - 1;
     for (const s of series) {
       const topPts = months.map((_, i) => {
         cumulative[i] += s.values[i] || 0;
@@ -434,6 +435,26 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
       const bottom = months.map((_, i) => `${xFor(i)},${yFor(bottomPts[i])}`).reverse().join(" L ");
       const d = `M ${top} L ${bottom} Z`;
       plotGroup.appendChild(svgEl("path", { d }, `viz-area viz-area-stack-gap ${s.colorClass}`));
+
+      // Direct label at the last point, so a band's actual value is legible
+      // regardless of where it sits in the stack — a bottom band anchored to
+      // a flat 0 baseline reads as visually "calmer" than one riding a
+      // wobbling baseline above it even when it's the larger of the two, so
+      // position alone can't be trusted to convey magnitude. Skipped when
+      // the band's too thin at that point to hold a label without clashing
+      // with its neighbors.
+      const bandTopY = yFor(topPts[lastIdx]);
+      const bandBottomY = yFor(bottomPts[lastIdx]);
+      if (bandBottomY - bandTopY >= 16 && s.values[lastIdx] > 0) {
+        const text = formatMetric(s.values[lastIdx], metric);
+        const cy = (bandTopY + bandBottomY) / 2;
+        const labelX = xFor(lastIdx) - 6;
+        const approxW = text.length * 6.3 + 10;
+        plotGroup.appendChild(svgEl("rect", { x: labelX - approxW, y: cy - 9, width: approxW, height: 18, rx: 4 }, "viz-stack-label-bg"));
+        const lbl = svgEl("text", { x: labelX - 5, y: cy + 4, "text-anchor": "end" }, "viz-stack-label");
+        lbl.textContent = text;
+        plotGroup.appendChild(lbl);
+      }
     }
   } else {
     for (const s of series) {
@@ -514,7 +535,14 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
 // Horizontal bar chart (leaderboard)
 // ---------------------------------------------------------------------------
 
-export function renderBarChart(body, tableSlot, { items, metric, emphasisMap }) {
+/** `items`: [{ operator, segments: [{key, label, value, colorClass}], dim? }].
+ * A single-segment row (mode "as is") renders as a plain bar; 2+ segments
+ * render as a stacked horizontal bar with a thin gap between them. The
+ * total (sum of segments) drives the row's overall length and end label.
+ * `dim`, when true, mutes a row (used to de-emphasize non-compared
+ * operators once one of the split modes makes per-operator color emphasis
+ * impractical). */
+export function renderBarChart(body, tableSlot, { items, metric, legend }) {
   clear(body);
   if (items.length === 0) {
     emptyState(body, "No data for the current filters.");
@@ -527,11 +555,11 @@ export function renderBarChart(body, tableSlot, { items, metric, emphasisMap }) 
   const plotW = W - marginL - marginR - labelColW;
   const H = marginT + marginB + items.length * (rowH + gap) - gap;
 
-  const max = Math.max(...items.map((it) => it.value), 1);
+  const totals = items.map((it) => it.segments.reduce((s, seg) => s + seg.value, 0));
+  const max = Math.max(...totals, 1);
   const xScale = (v) => Math.max(0, (v / max) * plotW);
 
   const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Leaderboard" }, "viz-svg");
-  const hasEmphasis = emphasisMap && emphasisMap.size > 0;
 
   const maxLabelChars = 24;
   const truncate = (s) => (s.length > maxLabelChars ? `${s.slice(0, maxLabelChars - 1)}…` : s);
@@ -539,46 +567,58 @@ export function renderBarChart(body, tableSlot, { items, metric, emphasisMap }) 
   items.forEach((it, i) => {
     const y = marginT + i * (rowH + gap);
     const barX = marginL + labelColW;
-    const w = xScale(it.value);
+    const total = totals[i];
 
     const label = svgEl("text", { x: barX - 8, y: y + rowH / 2 + 4 }, "viz-bar-category-label viz-axis-label--y");
     label.textContent = truncate(it.operator);
+    if (it.dim) label.classList.add("viz-bar--dim");
     svg.appendChild(label);
 
-    const colorClass = hasEmphasis
-      ? (emphasisMap.has(it.operator) ? emphasisMap.get(it.operator) : SERIES_OTHER_CLASS)
-      : "seq-500";
-    const bar = svgEl("rect", {
-      x: barX, y, width: Math.max(2, w), height: rowH, rx: 4, ry: 4,
-    }, `viz-bar ${colorClass}`);
-    svg.appendChild(bar);
+    const multiSegment = it.segments.length > 1;
+    let cx = barX;
+    for (const seg of it.segments) {
+      const w = xScale(seg.value);
+      if (w <= 0) continue;
+      const rectAttrs = multiSegment
+        ? { x: cx, y, width: Math.max(2, w), height: rowH }
+        : { x: cx, y, width: Math.max(2, w), height: rowH, rx: 4, ry: 4 };
+      const rectClass = `viz-bar ${multiSegment ? "viz-bar-segment" : ""} ${seg.colorClass}${it.dim ? " viz-bar--dim" : ""}`;
+      svg.appendChild(svgEl("rect", rectAttrs, rectClass));
+      cx += w;
+    }
 
-    const valueLabel = svgEl("text", { x: barX + w + 8, y: y + rowH / 2 + 4 }, "viz-bar-label");
-    valueLabel.textContent = formatMetric(it.value, metric);
+    const valueLabel = svgEl("text", { x: cx + 8, y: y + rowH / 2 + 4 }, "viz-bar-label");
+    valueLabel.textContent = formatMetric(total, metric);
     svg.appendChild(valueLabel);
 
     const hitArea = svgEl("rect", { x: marginL, y, width: labelColW + plotW, height: rowH }, "viz-hit-rect");
     svg.appendChild(hitArea);
-    hitArea.addEventListener("pointermove", (evt) => {
-      showTooltip(evt.clientX, evt.clientY, it.operator, [
-        { colorClass, label: METRIC_LABEL[metric], value: formatMetric(it.value, metric) },
-      ]);
-    });
-    hitArea.addEventListener("pointerdown", (evt) => {
-      showTooltip(evt.clientX, evt.clientY, it.operator, [
-        { colorClass, label: METRIC_LABEL[metric], value: formatMetric(it.value, metric) },
-      ]);
-    });
+    const tooltipRows = it.segments.length > 1
+      ? it.segments.map((seg) => ({ colorClass: seg.colorClass, label: seg.label, value: formatMetric(seg.value, metric) }))
+      : [{ colorClass: it.segments[0]?.colorClass, label: METRIC_LABEL[metric], value: formatMetric(total, metric) }];
+    const onHover = (evt) => showTooltip(evt.clientX, evt.clientY, it.operator, tooltipRows);
+    hitArea.addEventListener("pointermove", onHover);
+    hitArea.addEventListener("pointerdown", onHover);
     hitArea.addEventListener("pointerleave", hideTooltip);
   });
 
   body.appendChild(svg);
 
+  const segmented = items[0]?.segments.length > 1;
+  if (segmented && legend) {
+    body.appendChild(buildLegend(legend, () => {}));
+  }
+
   clear(tableSlot);
+  const segmentKeys = segmented ? items[0].segments.map((s) => s.label) : [];
   tableSlot.appendChild(buildTable({
     caption: `Operator leaderboard (${METRIC_LABEL[metric]})`,
-    columns: ["Operator", METRIC_LABEL[metric]],
-    rows: items.map((it) => [it.operator, formatMetric(it.value, metric)]),
+    columns: ["Operator", ...segmentKeys, "Total"],
+    rows: items.map((it, i) => [
+      it.operator,
+      ...(segmented ? it.segments.map((seg) => formatMetric(seg.value, metric)) : []),
+      formatMetric(totals[i], metric),
+    ]),
   }));
 }
 

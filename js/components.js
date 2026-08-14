@@ -82,60 +82,71 @@ export function createMultiSelect({ label, options, selected, max, onChange }) {
     count.style.display = selected.size > 0 ? "" : "none";
   }
 
-  function renderOptions(filterText) {
-    list.innerHTML = "";
-    const q = (filterText || "").trim().toLowerCase();
-    for (const opt of options) {
-      if (q && !opt.label.toLowerCase().includes(q)) continue;
-      const row = document.createElement("label");
+  // Rows are built exactly once and then mutated in place (checked/disabled/
+  // hidden) rather than torn down and rebuilt on every change. Destroying and
+  // recreating the checkbox you just clicked strips its focus, and losing
+  // focus on a removed element is a classic cause of an unwanted scroll jump
+  // — the browser hunts for somewhere sensible to refocus.
+  const rowEntries = [];
+  for (const opt of options) {
+    const row = document.createElement("label");
+    row.className = "filter-option";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selected.has(opt.key);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selected.add(opt.key); else selected.delete(opt.key);
+      refreshTrigger();
+      updateOptionStates();
+      onChange(selected);
+    });
+
+    if (opt.colorClass) {
+      const swatch = document.createElement("span");
+      swatch.className = `filter-option__swatch ${opt.colorClass}`;
+      row.appendChild(swatch);
+    }
+    const textEl = document.createElement("span");
+    textEl.className = "filter-option__label";
+    textEl.textContent = opt.label;
+
+    row.append(checkbox, textEl);
+    if (opt.meta) {
+      const meta = document.createElement("span");
+      meta.className = "filter-option__meta";
+      meta.textContent = opt.meta;
+      row.appendChild(meta);
+    }
+    list.appendChild(row);
+    rowEntries.push({ opt, row, checkbox });
+  }
+
+  function updateOptionStates(filterText) {
+    const q = (filterText ?? (searchInput ? searchInput.value : "")).trim().toLowerCase();
+    for (const { opt, row, checkbox } of rowEntries) {
+      row.hidden = q.length > 0 && !opt.label.toLowerCase().includes(q);
       const atCap = max && selected.size >= max && !selected.has(opt.key);
-      row.className = "filter-option" + (atCap ? " filter-option--disabled" : "");
-
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = selected.has(opt.key);
       checkbox.disabled = atCap;
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) selected.add(opt.key); else selected.delete(opt.key);
-        refreshTrigger();
-        renderOptions(searchInput ? searchInput.value : "");
-        onChange(selected);
-      });
-
-      if (opt.colorClass) {
-        const swatch = document.createElement("span");
-        swatch.className = `filter-option__swatch ${opt.colorClass}`;
-        row.appendChild(swatch);
-      }
-      const textEl = document.createElement("span");
-      textEl.className = "filter-option__label";
-      textEl.textContent = opt.label;
-
-      row.append(checkbox, textEl);
-      if (opt.meta) {
-        const meta = document.createElement("span");
-        meta.className = "filter-option__meta";
-        meta.textContent = opt.meta;
-        row.appendChild(meta);
-      }
-      list.appendChild(row);
+      checkbox.checked = selected.has(opt.key);
+      row.classList.toggle("filter-option--disabled", atCap);
     }
   }
 
-  if (searchInput) searchInput.addEventListener("input", () => renderOptions(searchInput.value));
+  if (searchInput) searchInput.addEventListener("input", () => updateOptionStates(searchInput.value));
   clearBtn.addEventListener("click", () => {
     selected.clear();
     refreshTrigger();
-    renderOptions(searchInput ? searchInput.value : "");
+    updateOptionStates();
     onChange(selected);
   });
 
   attachPopover(trigger, popover);
   refreshTrigger();
-  renderOptions("");
+  updateOptionStates("");
 
   control.append(trigger, popover);
-  return { el: control, refresh: () => { refreshTrigger(); renderOptions(searchInput ? searchInput.value : ""); } };
+  return { el: control, refresh: () => { refreshTrigger(); updateOptionStates(); } };
 }
 
 /** Date-range control: preset rows first, custom month-to-month tucked
@@ -256,26 +267,43 @@ export function createDateRangeControl({ months, value, onChange }) {
   return { el: control };
 }
 
+/** `options`: [{key, label, disabled?, title?}]. A disabled option ignores
+ * clicks and gets a `title` tooltip explaining why (e.g. "Only available
+ * for GGR or Turnover") — it stays visible rather than vanishing, so the
+ * control doesn't silently shrink and the reason is discoverable. */
 export function createSegmented({ options, selected, onChange }) {
   const wrap = document.createElement("div");
   wrap.className = "filter-segmented";
-  function render() {
-    wrap.innerHTML = "";
-    for (const opt of options) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "filter-segmented__option" + (opt.key === selected.value ? " filter-segmented__option--selected" : "");
-      btn.textContent = opt.label;
-      btn.addEventListener("click", () => {
-        selected.value = opt.key;
-        render();
-        onChange(opt.key);
-      });
-      wrap.appendChild(btn);
+
+  // Buttons are built once and their --selected class toggled in place on
+  // click — never torn down and rebuilt, which would destroy the very
+  // button that was just clicked (and holds focus), causing a scroll jump.
+  const buttons = options.map((opt) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "filter-segmented__option" + (opt.key === selected.value ? " filter-segmented__option--selected" : "");
+    btn.textContent = opt.label;
+    btn.disabled = !!opt.disabled;
+    if (opt.title) btn.title = opt.title;
+    btn.addEventListener("click", () => {
+      if (opt.disabled) return;
+      selected.value = opt.key;
+      sync();
+      onChange(opt.key);
+    });
+    wrap.appendChild(btn);
+    return { opt, btn };
+  });
+
+  function sync() {
+    for (const { opt, btn } of buttons) {
+      btn.classList.toggle("filter-segmented__option--selected", opt.key === selected.value);
+      btn.disabled = !!opt.disabled;
+      if (opt.title) btn.title = opt.title; else btn.removeAttribute("title");
     }
   }
-  render();
-  return { el: wrap };
+
+  return { el: wrap, refresh: sync };
 }
 
 export function createResetButton(onClick) {
