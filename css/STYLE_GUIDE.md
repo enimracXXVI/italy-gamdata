@@ -16,11 +16,10 @@ classes (§7).
 ## 1. Color tokens
 
 Defined once as CSS custom properties on `:root` (light values), then
-re-declared under `@media (prefers-color-scheme: dark)` and again under
-`:root[data-theme="dark"]` (the in-page ☽/☀ toggle in the header, persisted
-to `localStorage`). Both dark blocks carry identical values — the media
-query covers OS-level dark mode, the `data-theme` attribute covers the
-manual toggle overriding it either way.
+re-declared under `@media (prefers-color-scheme: dark)`. Theme follows the
+device's OS-level preference only — there is no in-page toggle (there used
+to be one; removed since a page-level override on top of a device-level
+setting was just a second thing to get out of sync with the other).
 
 | Token | Light | Dark | Used for |
 |---|---|---|---|
@@ -85,14 +84,14 @@ every one of these classes going forward.
 | `.app-header__title` | "Italy Gaming Market" | same |
 | `.tab-nav` / `.tab-nav__item` / `--active` | Dashboard ↔ Data Quality switcher in the header. Same `:not(--active):hover` scoping as the segmented control | header, `app.js` `setupTabs()` |
 | `.tab-nav__item-badge` | Small count pill on the "Data Quality" tab button — active (non-dismissed) finding count. Removed entirely when the count is 0 | `app.js` `updateQualityBadge()` |
-| `.app-header__actions` | Right-side cluster (last-updated + theme button) | same |
+| `.app-header__actions` | Right-side cluster (just the last-updated text now) | same |
 | `.app-header__updated` | "Data through …" text, hidden under 480px | same, set by `app.js` |
-| `.icon-button` / `.icon-button__glyph` | Circular theme-toggle button + its glyph span | header `#theme-toggle` |
 | `.status-banner` + `--loading` / `--error` / `--warning` | Fetch status / data-quality message above the filter bar (`--warning` is the duplicate-rows notice, sourced from `js/quality.js`) | `app.js` `showStatus()` |
 | `.status-banner__title` | Bold first line of the banner | same |
 | `.app-main` | Centered column, holds both tab panels | `index.html` `<main>` |
 | `.tab-panel` | One of the two top-level views (`#tab-panel-dashboard`, `#tab-panel-quality`); flex column with the section gap `.app-main` used to provide directly before the tabs existed | same |
 | `.dashboard-section` | One titled block ("Market overview", "Operator compare", and every Data Quality check) | same |
+| `#section-compare` | id on the "Operator compare" section specifically — `app.js` sets its `hidden` attribute directly (`state.operators.size === 0`) each render. Three chart cards all showing the same "pick an operator to see this" placeholder at once read as dead space to scroll past, so the section collapses entirely instead until a pick is made | `index.html`, `app.js render()` |
 | `.section-title` / `.section-subtitle` | Section heading + one-line description | same |
 
 ---
@@ -118,15 +117,40 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-option__swatch` | Small color square before a vertical/operator name, tied to its `series-N` |
 | `.filter-option__label` | The option's text, ellipsis-truncated if too long |
 | `.filter-option__meta` | Secondary text after the label (operator's group name) |
-| `.filter-popover__footer` | Row holding Clear + the "Up to N" hint |
-| `.filter-popover__clear` | The small "Clear" button in a multi-select popover footer |
+| `.filter-popover__footer` | Row holding the footer actions + the "Up to N" hint |
+| `.filter-popover__footer-actions` | Groups "Select all" and "Clear" together on the footer's left side |
+| `.filter-popover__clear` | Shared class for both the "Select all" and "Clear" buttons in a multi-select popover footer (same look, so it wasn't worth a second class name) |
 | `.filter-popover__hint` | Muted helper text ("Up to 6") |
 | `.filter-preset-list` / `.filter-preset` | Date-range preset rows (All time, Last month, Last 3/6/12 months, YTD, Custom) — "Last month" is the single most recent month with data, not the current calendar month (which may have none yet) |
 | `.filter-preset__check` | The ✓ mark, visible only on `.filter-preset--selected` |
-| `.filter-preset-custom` | Footer row holding the two custom month `<select>`s |
-| `.filter-date-select` | Each of those two `<select>` elements |
+| `.filter-preset-custom` | Wraps the custom-range picker: a "From" row and a "To" row, stacked |
+| `.filter-date-pair-row` | One of those two rows: a small "From"/"To" label + a Month `<select>` + a Year `<select>` |
+| `.filter-date-pair-row__label` | The "From"/"To" label itself, given a fixed `min-width` so both rows' selects line up |
+| `.filter-date-select` | Either select in a pair. Month and Year are separate controls (not one combined "July 2026" list) — not every month/year combination the two selects can produce necessarily has data, so picking one snaps to whichever real month is numerically closest (`nearestMonthKey` in `createDateRangeControl`) rather than silently doing nothing |
+| `.filter-date-select--year` | Narrower fixed width for the Year select specifically, since Month needs more room for names like "September" |
 | `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle, the Operator share card's local GGR/Turnover and Stacked/Lines toggles, and the Operator leaderboard's Total/By channel/By vertical toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click. `:disabled` (used by the leaderboard toggle when a split mode doesn't apply to the current filters) is muted and non-interactive but stays visible with a `title` tooltip explaining why, rather than vanishing |
 | `.filter-reset` | "Reset filters" text button, right-aligned |
+| `.filter-fab` | Mobile-only floating button (bottom-right, hidden ≥860px) that opens the filter bar as a bottom sheet — see the note below |
+| `.filter-sheet-backdrop` / `--visible` | Full-viewport dimming layer behind the open sheet; also closes it on click |
+| `.filter-bar--sheet-open` | Applied to `#filter-bar` itself while the mobile sheet is open — slides it in via `transform: translateY(...)` |
+
+**Below 860px, `#filter-bar` becomes a bottom sheet instead of an inline
+row** (`js/app.js` `setupFilterSheet()`, CSS in §14). It's the *same*
+`#filter-bar` element and the *same* control instances built once in
+`buildFilterBar()` — only its position/transform change at the breakpoint,
+so there's no second copy of the filter logic to keep in sync. Opening
+pushes a throwaway `history` entry so the device's back button closes the
+sheet instead of leaving the page (the one hard requirement for this
+pattern); closing via the backdrop or the FAB itself has to consume that
+same entry (`history.back()`) so a stray extra back-press isn't left
+over — otherwise the *next* real back-press would silently do nothing
+instead of leaving the page, since it'd just be popping an already-inert
+sheet-closed entry. Popovers inside the sheet switch from `position:
+absolute` to `position: static` (`.filter-bar .filter-popover` override) so
+they flow in place below their trigger instead of floating — the fixed
+desktop popover width (built for a wide inline row) was overflowing past
+the screen edge on narrow viewports before this, which is what "the search
+dropdown goes beyond the container" was.
 
 **Every filter/view choice is reflected in the URL** (`app.js` `syncURL()` /
 the `urlParams` block in `boot()`), via `history.replaceState` — no history
@@ -188,7 +212,7 @@ every deploy.
 |---|---|
 | `.chart-grid` + `--1col` / `--2col` | Grid wrapper that lays out 1 or 2 cards per row (collapses to 1 under 860px) |
 | `.chart-card` | The white/dark card shell around every chart |
-| `.chart-card__header` | Title row on the left, controls (optional local toggle + "View as table") on the right |
+| `.chart-card__header` | Title row on the left, controls (optional local toggle + "View as table") on the right. `flex-wrap: wrap` (not a forced column stack) — controls drop below the title only when they don't actually fit on one line; a plain card with just the table button stays on one row even on a phone, since there's nothing there that needs the extra height |
 | `.chart-card__title-row` | Wraps the `<h3>` title and its (i) info button |
 | `.chart-card__title` | Chart title, e.g. "Market trend by vertical" |
 | `.chart-card__controls` | Right-side cluster in the header: an optional `extra` node — or array of nodes, e.g. Operator share's local GGR/Turnover toggle *and* its Stacked/Lines view toggle side by side — plus the table-view button |
@@ -232,8 +256,8 @@ and scales via CSS width, so one code path serves desktop and mobile.
 | `.viz-bar` | A leaderboard bar — a single rounded rect in "Total" mode, or one rect per segment (square-cornered, see `.viz-bar-segment`) in the By channel/By vertical modes |
 | `.viz-bar-segment` | Added alongside `.viz-bar` for each piece of a multi-segment (stacked) bar; adds the thin surface-colored gap stroke between segments |
 | `.viz-bar--dim` | Applied to a bar/area/label when its legend entry is toggled off, or (leaderboard split modes only) to every row whose operator isn't in the "Compare operators" set — segment colors there are fixed to channel/vertical identity, not operator identity, so dimming the whole row is how those modes show emphasis instead |
-| `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) |
-| `.viz-bar-category-label` | The row's category name to the left of a bar — an operator name for the Operator leaderboard, but `renderBarChart` (`js/charts.js`) is generic: any caller can hand it `{ operator: <any label>, segments }` rows and pass `categoryLabel`/`chartLabel` to relabel the axis/table/aria-text for what those rows actually are |
+| `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) — optionally followed by `(N%)` when an item carries a `note` (e.g. the single-month Market trend breakdown adds each vertical's % of the total alongside its € figure) |
+| `.viz-bar-category-label` | The row's category name to the left of a bar — an operator name for the Operator leaderboard, but `renderBarChart` (`js/charts.js`) is generic: any caller can hand it `{ operator: <any label>, segments }` rows and pass `categoryLabel`/`chartLabel` to relabel the axis/table/aria-text for what those rows actually are. Its column width (`labelColW`) is sized to the longest label actually present (capped at the same width the old fixed constant used) rather than a flat constant — a fixed-width column left a dead gap between the card's left edge and short labels like "Casino" or a single operator name |
 | `.viz-cell` | One heatmap cell (vertical × channel) |
 | `.viz-cell-label` | The value text inside a cell |
 | `.viz-heatmap-row-label` / `-col-label` | Row (vertical) / column (channel) headers on a heatmap |

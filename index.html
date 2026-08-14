@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Italy Gaming Market Dashboard</title>
-<link rel="stylesheet" href="css/styles.css?v=202608141416">
+<link rel="stylesheet" href="css/styles.css?v=202608141555">
 </head>
 <body>
 
@@ -19,9 +19,6 @@
     </nav>
     <div class="app-header__actions">
       <span class="app-header__updated" id="last-updated"></span>
-      <button type="button" class="icon-button" id="theme-toggle" aria-label="Toggle dark mode">
-        <span class="icon-button__glyph" id="theme-toggle-glyph" aria-hidden="true">&#9789;</span>
-      </button>
     </div>
   </div>
 </header>
@@ -35,6 +32,10 @@
     <section class="filter-bar" id="filter-bar" aria-label="Filters">
       <!-- populated by js/app.js: date range, vertical select, channel select, operator compare select, metric toggle, reset -->
     </section>
+    <div class="filter-sheet-backdrop" id="filter-sheet-backdrop"></div>
+    <button type="button" class="filter-fab" id="filter-fab" aria-label="Open filters">
+      <span aria-hidden="true">&#9881;</span>
+    </button>
 
     <section class="kpi-row" id="kpi-row" aria-label="Key metrics">
       <!-- populated by js/app.js with .stat-tile elements -->
@@ -52,7 +53,7 @@
       </div>
     </section>
 
-    <section class="dashboard-section">
+    <section class="dashboard-section" id="section-compare">
       <h2 class="section-title">Operator compare</h2>
       <p class="section-subtitle">Pick up to 6 operators in the filter bar above to trace their trend and break down their mix by vertical and channel.</p>
       <div class="chart-grid chart-grid--1col">
@@ -76,6 +77,6 @@
 
 <div class="tooltip" id="viz-tooltip" role="tooltip" hidden></div>
 
-<script type="module" src="js/app.js?v=202608141416"></script>
+<script type="module" src="js/app.js?v=202608141555"></script>
 </body>
 </html>

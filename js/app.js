@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608141416";
-import * as Agg from "./aggregate.js?v=202608141416";
-import * as Charts from "./charts.js?v=202608141416";
-import * as Quality from "./quality.js?v=202608141416";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608141416";
+} from "./data.js?v=202608141555";
+import * as Agg from "./aggregate.js?v=202608141555";
+import * as Charts from "./charts.js?v=202608141555";
+import * as Quality from "./quality.js?v=202608141555";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608141555";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -30,6 +30,7 @@ const cards = {
   compareIndexed: document.getElementById("card-compare-indexed"),
   compareMatrix: document.getElementById("card-compare-matrix"),
 };
+const compareSection = document.getElementById("section-compare");
 
 function showStatus(kind, title, detail) {
   statusBanner.hidden = false;
@@ -46,29 +47,6 @@ function showStatus(kind, title, detail) {
   }
 }
 function hideStatus() { statusBanner.hidden = true; }
-
-// ---------------------------------------------------------------------------
-// Theme toggle
-// ---------------------------------------------------------------------------
-(function initTheme() {
-  const glyph = document.getElementById("theme-toggle-glyph");
-  const stored = localStorage.getItem("gamdata-theme");
-  if (stored) document.documentElement.setAttribute("data-theme", stored);
-  function syncGlyph() {
-    const active = document.documentElement.getAttribute("data-theme")
-      || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    glyph.textContent = active === "dark" ? "☀" : "☽";
-  }
-  document.getElementById("theme-toggle").addEventListener("click", () => {
-    const current = document.documentElement.getAttribute("data-theme")
-      || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    const next = current === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("gamdata-theme", next);
-    syncGlyph();
-  });
-  syncGlyph();
-})();
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -89,6 +67,47 @@ function setupTabs(initialTab, onChange = () => {}) {
   dashboardBtn.addEventListener("click", () => activate("dashboard"));
   qualityBtn.addEventListener("click", () => activate("quality"));
   if (initialTab === "quality") activate("quality");
+}
+
+// ---------------------------------------------------------------------------
+// Mobile filter sheet
+// Below 860px (see styles.css §14) #filter-bar is repositioned by CSS into
+// a bottom sheet opened by a floating button; this just drives the
+// open/close state and makes the device's back button close the sheet
+// instead of leaving the page — the one explicit requirement for this
+// pattern. Standard technique: opening pushes a throwaway history entry;
+// back-button pops it (fires popstate, we just drop the open class);
+// closing via the UI instead has to consume that same entry itself
+// (history.back()) so a second back-press isn't needed afterward to
+// actually leave the page.
+// ---------------------------------------------------------------------------
+function setupFilterSheet() {
+  const fab = document.getElementById("filter-fab");
+  const backdrop = document.getElementById("filter-sheet-backdrop");
+  const bar = document.getElementById("filter-bar");
+  let openedViaHistory = false;
+
+  function isOpen() { return bar.classList.contains("filter-bar--sheet-open"); }
+  function setOpen(open) {
+    bar.classList.toggle("filter-bar--sheet-open", open);
+    backdrop.classList.toggle("filter-sheet-backdrop--visible", open);
+    document.body.style.overflow = open ? "hidden" : "";
+  }
+
+  fab.addEventListener("click", () => {
+    if (isOpen()) return;
+    setOpen(true);
+    history.pushState({ filterSheet: true }, "");
+    openedViaHistory = true;
+  });
+  backdrop.addEventListener("click", () => {
+    if (!isOpen()) return;
+    setOpen(false);
+    if (openedViaHistory) { openedViaHistory = false; history.back(); }
+  });
+  window.addEventListener("popstate", () => {
+    if (isOpen()) { setOpen(false); openedViaHistory = false; }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +396,7 @@ async function boot() {
   }
 
   setupTabs(activeTab, (tab) => { activeTab = tab; syncURL(); });
+  setupFilterSheet();
 
   buildFilterBar();
   render();
@@ -506,17 +526,15 @@ async function boot() {
 
     const totalGGR = Agg.sum(filtered, "ggr");
     const totalTurnover = Agg.sum(filtered, "turnover");
-    const blendedMargin = Agg.sum(filtered, "hold");
-    const operatorCount = new Set(filtered.map((r) => r.operator)).size;
+    const overallMargin = Agg.sum(filtered, "hold");
     // Always GGR-based regardless of the metric toggle — "share" and "index"
     // aren't quantities you can take a year-over-year delta of the same way.
     const yoyPct = yoyPercent(filtered, months, "ggr");
 
     addTile("Total GGR", Charts.formatMetric(totalGGR, "ggr"), momPercent(filtered, months, "ggr"), "MoM", true);
     addTile("Total Turnover", Charts.formatMetric(totalTurnover, "turnover"), momPercent(filtered, months, "turnover"), "MoM", true);
-    addTile("Blended margin", Charts.formatMetric(blendedMargin, "hold"), momPercent(filtered, months, "hold"), "MoM", true);
+    addTile("Overall margin", Charts.formatMetric(overallMargin, "hold"), momPercent(filtered, months, "hold"), "MoM", true);
     addTile("Year over year (GGR)", yoyPct === null ? "—" : `${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%`, yoyPct, "vs same month last year", true);
-    addTile("Operators in view", String(operatorCount), null, "", false);
   }
 
   function addTile(label, value, deltaPct, deltaCaption, showDelta) {
@@ -588,10 +606,23 @@ async function boot() {
             operator: it.operator,
             segments: [{ key: "total", label: "Share", value: marketGGR ? (it.value / marketGGR) * 100 : 0, colorClass: Charts.verticalColorClass(it.operator, verticalOrder) }],
           }));
-        } else {
+        } else if (state.metric === "hold") {
+          // Margin % isn't additive across verticals, so "% of total" has
+          // no meaning here (unlike GGR/Turnover, below) — just the value.
           items = Agg.leaderboard(filtered, state.metric, verticalOrder.length, "vertical").map((it) => ({
             operator: it.operator,
             segments: [{ key: "total", label: Charts.METRIC_LABEL[state.metric], value: it.value, colorClass: Charts.verticalColorClass(it.operator, verticalOrder) }],
+          }));
+        } else {
+          // GGR/Turnover are additive, so each vertical's € figure can
+          // carry its own % of the total alongside it — both numbers
+          // people actually want out of a single-month breakdown.
+          const raw = Agg.leaderboard(filtered, state.metric, verticalOrder.length, "vertical");
+          const grandTotal = raw.reduce((s, it) => s + it.value, 0);
+          items = raw.map((it) => ({
+            operator: it.operator,
+            segments: [{ key: "total", label: Charts.METRIC_LABEL[state.metric], value: it.value, colorClass: Charts.verticalColorClass(it.operator, verticalOrder) }],
+            note: grandTotal ? `${((it.value / grandTotal) * 100).toFixed(1)}%` : undefined,
           }));
         }
         Charts.renderBarChart(body, tableSlot, {
@@ -612,7 +643,7 @@ async function boot() {
       } else {
         const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
           title: "Market trend by vertical",
-          caption: state.metric === "hold" ? "Blended margin % per vertical, per month."
+          caption: state.metric === "hold" ? "Overall margin % per vertical, per month."
             : state.metric === "share" ? "Each vertical's % share of total GGR, per month — always sums to 100%."
             : "Stacked monthly total across the selected verticals & channels.",
         });
@@ -795,6 +826,13 @@ async function boot() {
 
       Charts.renderBarChart(body, tableSlot, { items, metric: state.metric, legend });
     }
+
+    // Nothing to show until operators are actually picked — an empty-state
+    // placeholder in three chart cards at once just reads as dead space
+    // that the visitor has to scroll past, so the whole section collapses
+    // instead. renderTimeSeriesChart etc. below still run to populate the
+    // cards' hidden content, so it's ready the instant a pick is made.
+    compareSection.hidden = state.operators.size === 0;
 
     // --- Compare: trend per selected operator ------------------------------
     {

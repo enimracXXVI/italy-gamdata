@@ -533,7 +533,14 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
   }
   const rowH = 26, gap = 8;
   const marginL = 8, marginR = 64, marginT = 4, marginB = 4;
-  const labelColW = 168;
+  const maxLabelChars = 24;
+  const truncate = (s) => (s.length > maxLabelChars ? `${s.slice(0, maxLabelChars - 1)}…` : s);
+  // Sized to the longest label actually present (capped at the truncation
+  // width), not a flat constant — a fixed-width column leaves a dead gap
+  // between the card's left edge and short labels like "Casino" or a
+  // single operator name.
+  const longestLabel = Math.max(...items.map((it) => truncate(String(it.operator ?? "")).length), 1);
+  const labelColW = Math.min(168, Math.max(40, Math.round(longestLabel * 6.3 + 16)));
   const W = measureWidth(body);
   const plotW = W - marginL - marginR - labelColW;
   const H = marginT + marginB + items.length * (rowH + gap) - gap;
@@ -543,9 +550,6 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
   const xScale = (v) => Math.max(0, (v / max) * plotW);
 
   const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": chartLabel }, "viz-svg");
-
-  const maxLabelChars = 24;
-  const truncate = (s) => (s.length > maxLabelChars ? `${s.slice(0, maxLabelChars - 1)}…` : s);
 
   items.forEach((it, i) => {
     const y = marginT + i * (rowH + gap);
@@ -571,7 +575,7 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
     }
 
     const valueLabel = svgEl("text", { x: cx + 8, y: y + rowH / 2 + 4 }, "viz-bar-label");
-    valueLabel.textContent = formatMetric(total, metric);
+    valueLabel.textContent = it.note ? `${formatMetric(total, metric)}  (${it.note})` : formatMetric(total, metric);
     svg.appendChild(valueLabel);
 
     const hitArea = svgEl("rect", { x: marginL, y, width: labelColW + plotW, height: rowH }, "viz-hit-rect");
@@ -579,6 +583,7 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
     const tooltipRows = it.segments.length > 1
       ? it.segments.map((seg) => ({ colorClass: seg.colorClass, label: seg.label, value: formatMetric(seg.value, metric) }))
       : [{ colorClass: it.segments[0]?.colorClass, label: METRIC_LABEL[metric], value: formatMetric(total, metric) }];
+    if (it.note) tooltipRows.push({ label: "% of total", value: it.note });
     const onHover = (evt) => showTooltip(evt.clientX, evt.clientY, it.operator, tooltipRows);
     hitArea.addEventListener("pointermove", onHover);
     hitArea.addEventListener("pointerdown", onHover);
@@ -594,13 +599,15 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
 
   clear(tableSlot);
   const segmentKeys = segmented ? items[0].segments.map((s) => s.label) : [];
+  const hasNotes = items.some((it) => it.note);
   tableSlot.appendChild(buildTable({
     caption: `${chartLabel} (${METRIC_LABEL[metric]})`,
-    columns: [categoryLabel, ...segmentKeys, "Total"],
+    columns: [categoryLabel, ...segmentKeys, "Total", ...(hasNotes ? ["% of total"] : [])],
     rows: items.map((it, i) => [
       it.operator,
       ...(segmented ? it.segments.map((seg) => formatMetric(seg.value, metric)) : []),
       formatMetric(totals[i], metric),
+      ...(hasNotes ? [it.note ?? ""] : []),
     ]),
   }));
 }

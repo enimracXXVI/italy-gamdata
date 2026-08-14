@@ -66,14 +66,21 @@ export function createMultiSelect({ label, options, selected, max, onChange }) {
 
   const footer = document.createElement("div");
   footer.className = "filter-popover__footer";
+  const footerActions = document.createElement("div");
+  footerActions.className = "filter-popover__footer-actions";
+  const selectAllBtn = document.createElement("button");
+  selectAllBtn.type = "button";
+  selectAllBtn.className = "filter-popover__clear";
+  selectAllBtn.textContent = "Select all";
   const clearBtn = document.createElement("button");
   clearBtn.type = "button";
   clearBtn.className = "filter-popover__clear";
   clearBtn.textContent = "Clear";
+  footerActions.append(selectAllBtn, clearBtn);
   const hint = document.createElement("span");
   hint.className = "filter-popover__hint";
   hint.textContent = max ? `Up to ${max}` : "";
-  footer.append(clearBtn, hint);
+  footer.append(footerActions, hint);
   popover.appendChild(footer);
 
   function refreshTrigger() {
@@ -134,7 +141,11 @@ export function createMultiSelect({ label, options, selected, max, onChange }) {
   function updateOptionStates(filterText) {
     const q = (filterText ?? (searchInput ? searchInput.value : "")).trim().toLowerCase();
     for (const { opt, row, checkbox } of rowEntries) {
-      row.hidden = q.length > 0 && !opt.label.toLowerCase().includes(q);
+      // String(...) rather than trusting opt.label is a string: one bad
+      // label would otherwise throw mid-loop and leave every row after it
+      // unfiltered, which looks exactly like "search does nothing" — cheap
+      // insurance even though callers are expected to pass strings.
+      row.hidden = q.length > 0 && !String(opt.label ?? "").toLowerCase().includes(q);
       const atCap = max && selected.size >= max && !selected.has(opt.key);
       checkbox.disabled = atCap;
       checkbox.checked = selected.has(opt.key);
@@ -154,6 +165,19 @@ export function createMultiSelect({ label, options, selected, max, onChange }) {
   }
   clearBtn.addEventListener("click", () => {
     selected.clear();
+    refreshTrigger();
+    updateOptionStates();
+    onChange(selected);
+  });
+  // Selects every currently-visible row (respects an active search filter,
+  // same as a user ticking each visible box by hand) up to `max` if the
+  // control has a cap — stops there rather than silently ignoring the rest.
+  selectAllBtn.addEventListener("click", () => {
+    for (const { opt, row } of rowEntries) {
+      if (row.hidden) continue;
+      if (max && selected.size >= max) break;
+      selected.add(opt.key);
+    }
     refreshTrigger();
     updateOptionStates();
     onChange(selected);
@@ -219,18 +243,59 @@ export function createDateRangeControl({ months, value, onChange }) {
     { id: "custom", label: "Custom range", range: () => ({ from: value.from, to: value.to }) },
   ];
 
-  const fromSelect = document.createElement("select");
-  fromSelect.className = "filter-date-select";
-  const toSelect = document.createElement("select");
-  toSelect.className = "filter-date-select";
-  for (const sel of [fromSelect, toSelect]) {
+  // Month and Year are two separate <select>s (not one combined "July 2026"
+  // list) — picking a year first then narrowing to a month reads more like
+  // a normal date picker than hunting through however many years of
+  // month-by-month entries. Not every month/year combination necessarily
+  // has data (the sheet's date range doesn't have to be a clean rectangle),
+  // so a chosen combo snaps to whichever real month is closest instead of
+  // silently doing nothing.
+  const MONTH_NAMES = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+  const years = [...new Set(months.map((m) => m.year))].sort((a, b) => a - b);
+
+  function nearestMonthKey(year, monthNumber) {
+    const target = year * 12 + monthNumber;
+    let best = months[0], bestDist = Infinity;
     for (const m of months) {
-      const opt = document.createElement("option");
-      opt.value = m.key;
-      opt.textContent = m.label;
-      sel.appendChild(opt);
+      const dist = Math.abs((m.year * 12 + m.monthNumber) - target);
+      if (dist < bestDist) { bestDist = dist; best = m; }
     }
+    return best.key;
   }
+
+  function buildMonthYearPicker() {
+    const monthSel = document.createElement("select");
+    monthSel.className = "filter-date-select";
+    MONTH_NAMES.forEach((name, i) => {
+      const opt = document.createElement("option");
+      opt.value = String(i + 1);
+      opt.textContent = name;
+      monthSel.appendChild(opt);
+    });
+    const yearSel = document.createElement("select");
+    yearSel.className = "filter-date-select filter-date-select--year";
+    for (const y of years) {
+      const opt = document.createElement("option");
+      opt.value = String(y);
+      opt.textContent = String(y);
+      yearSel.appendChild(opt);
+    }
+    return {
+      monthSel,
+      yearSel,
+      setFromKey(key) {
+        const m = months.find((mm) => mm.key === key);
+        if (m) { monthSel.value = String(m.monthNumber); yearSel.value = String(m.year); }
+      },
+      getKey() { return nearestMonthKey(Number(yearSel.value), Number(monthSel.value)); },
+    };
+  }
+
+  const fromPicker = buildMonthYearPicker();
+  const toPicker = buildMonthYearPicker();
 
   let activePreset = "all";
 
@@ -238,8 +303,8 @@ export function createDateRangeControl({ months, value, onChange }) {
     activePreset = presetId;
     value.from = range.from;
     value.to = range.to;
-    fromSelect.value = range.from ?? months[0]?.key;
-    toSelect.value = range.to ?? maxKey;
+    fromPicker.setFromKey(range.from ?? months[0]?.key);
+    toPicker.setFromKey(range.to ?? maxKey);
     renderPresetList();
     trigger.textContent = presetId === "custom"
       ? `${labelFor(range.from)} – ${labelFor(range.to)}`
@@ -270,19 +335,29 @@ export function createDateRangeControl({ months, value, onChange }) {
     }
   }
 
+  function buildPairRow(hintText, picker) {
+    const row = document.createElement("div");
+    row.className = "filter-date-pair-row";
+    const hint = document.createElement("span");
+    hint.className = "filter-popover__hint filter-date-pair-row__label";
+    hint.textContent = hintText;
+    row.append(hint, picker.monthSel, picker.yearSel);
+    return row;
+  }
+
   const customRow = document.createElement("div");
   customRow.className = "filter-preset-custom";
-  const toLabel = document.createElement("span");
-  toLabel.textContent = "–";
-  toLabel.className = "filter-popover__hint";
-  customRow.append(fromSelect, toLabel, toSelect);
+  customRow.append(buildPairRow("From", fromPicker), buildPairRow("To", toPicker));
 
   function onCustomChange() {
-    if (fromSelect.value > toSelect.value) toSelect.value = fromSelect.value;
-    apply({ from: fromSelect.value, to: toSelect.value }, "custom");
+    const from = fromPicker.getKey();
+    let to = toPicker.getKey();
+    if (from > to) { to = from; toPicker.setFromKey(from); }
+    apply({ from, to }, "custom");
   }
-  fromSelect.addEventListener("change", onCustomChange);
-  toSelect.addEventListener("change", onCustomChange);
+  for (const sel of [fromPicker.monthSel, fromPicker.yearSel, toPicker.monthSel, toPicker.yearSel]) {
+    sel.addEventListener("change", onCustomChange);
+  }
 
   // Initialize from whatever `value` the caller passed in (e.g. a range
   // restored from the URL) rather than always resetting to "all time" — try

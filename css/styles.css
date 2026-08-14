@@ -7,9 +7,10 @@
 
 /* --------------------------------------------------------------------------
    1. Design tokens (CSS custom properties)
-   Light values on :root; dark values re-declared under the OS media query
-   (guarded so an explicit light choice wins) and again under [data-theme=dark]
-   (so the in-page toggle wins both ways). See STYLE_GUIDE.md "Color tokens".
+   Light values on :root; dark values re-declared under the OS media query.
+   Theme follows the device's OS-level preference only — no in-app toggle —
+   so this is the only place dark mode is decided. See STYLE_GUIDE.md
+   "Color tokens".
    -------------------------------------------------------------------------- */
 :root {
   color-scheme: light;
@@ -80,7 +81,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) {
+  :root {
     color-scheme: dark;
 
     --surface-page:   #0d0d0d;
@@ -117,44 +118,6 @@
     --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 1px 1px rgba(0,0,0,0.3);
     --shadow-popover: 0 8px 24px rgba(0,0,0,0.5);
   }
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-
-  --surface-page:   #0d0d0d;
-  --surface-card:   #1a1a19;
-  --surface-raised: #232322;
-
-  --text-primary:   #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted:     #898781;
-
-  --border-hairline: rgba(255,255,255,0.10);
-  --grid-line:        #2c2c2a;
-  --axis-line:         #383835;
-  --focus-ring:        #3987e5;
-
-  --delta-good: #0ca30c;
-  --delta-bad:  #d03b3b;
-
-  --status-good:     #0ca30c;
-  --status-warning:  #fab219;
-  --status-serious:  #ec835a;
-  --status-critical: #e66767;
-
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --series-4: #c98500;
-  --series-5: #d55181;
-  --series-6: #008300;
-  --series-7: #9085e9;
-  --series-8: #e66767;
-  --series-other: #5c5b56;
-
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 1px 1px rgba(0,0,0,0.3);
-  --shadow-popover: 0 8px 24px rgba(0,0,0,0.5);
 }
 
 /* --------------------------------------------------------------------------
@@ -286,6 +249,7 @@ button { font-family: inherit; }
   color: var(--text-secondary);
   font-size: 0.8125rem;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 .tab-nav__item:not(.tab-nav__item--active):hover { color: var(--text-primary); }
@@ -308,22 +272,6 @@ button { font-family: inherit; }
   font-size: 0.625rem;
   font-weight: 700;
 }
-
-.icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-hairline);
-  background: var(--surface-raised);
-  color: var(--text-primary);
-  cursor: pointer;
-}
-.icon-button:hover { background: var(--surface-page); }
-.icon-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
-.icon-button__glyph { font-size: 1rem; line-height: 1; }
 
 /* --------------------------------------------------------------------------
    5. Status banner (loading / error state for the CSV fetch)
@@ -404,6 +352,42 @@ button { font-family: inherit; }
   z-index: 20;
   box-shadow: var(--shadow-card);
 }
+
+/* Floating filter button + backdrop: hidden entirely on desktop (§14 turns
+   them on and turns .filter-bar into the bottom sheet they open, below
+   860px). Markup lives here unconditionally so the same #filter-bar content
+   built once in app.js works in both presentations — only how it's
+   positioned changes. */
+.filter-fab {
+  display: none;
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 61;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.375rem;
+  box-shadow: var(--shadow-popover);
+  cursor: pointer;
+}
+.filter-fab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.filter-sheet-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.filter-sheet-backdrop--visible { opacity: 1; pointer-events: auto; }
 
 .filter-control { position: relative; }
 
@@ -510,6 +494,7 @@ button { font-family: inherit; }
   padding-top: var(--space-2);
   border-top: 1px solid var(--border-hairline);
 }
+.filter-popover__footer-actions { display: flex; gap: var(--space-2); }
 .filter-popover__hint { font-size: 0.6875rem; color: var(--text-muted); }
 
 .filter-popover__clear {
@@ -543,12 +528,14 @@ button { font-family: inherit; }
 .filter-preset--selected .filter-preset__check { visibility: visible; }
 .filter-preset-custom {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--space-2);
   margin-top: var(--space-2);
   padding-top: var(--space-2);
   border-top: 1px solid var(--border-hairline);
 }
+.filter-date-pair-row { display: flex; align-items: center; gap: var(--space-2); }
+.filter-date-pair-row__label { min-width: 28px; flex-shrink: 0; }
 .filter-date-select {
   flex: 1;
   padding: var(--space-2);
@@ -558,6 +545,7 @@ button { font-family: inherit; }
   color: var(--text-primary);
   font-size: 0.8125rem;
 }
+.filter-date-select--year { flex: 0 0 84px; }
 
 .filter-segmented {
   display: inline-flex;
@@ -669,6 +657,7 @@ button { font-family: inherit; }
 }
 .chart-card__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
@@ -948,18 +937,65 @@ button { font-family: inherit; }
 @media (max-width: 860px) {
   .app-main { padding: var(--space-4); gap: var(--space-5); }
   .chart-grid--2col { grid-template-columns: 1fr; }
-  .filter-bar { position: static; }
   .kpi-row { grid-template-columns: repeat(2, 1fr); }
   .app-header { padding: var(--space-3) var(--space-4); }
   .tab-nav__item { padding: 6px var(--space-2); font-size: 0.75rem; }
-  .chart-card__header { flex-direction: column; align-items: stretch; }
   .chart-card__controls { flex-wrap: wrap; }
+
+  /* The filter bar becomes a bottom sheet opened by the FAB instead of a
+     row inline in the page — on a phone, six filter controls inline ate a
+     huge chunk of the screen before you'd even reached a chart. Same
+     #filter-bar content as desktop (built once in app.js), just
+     repositioned + given a closed/open transform here. */
+  .filter-fab { display: flex; }
+  .filter-sheet-backdrop { display: block; }
+  .filter-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    max-height: 80vh;
+    overflow-y: auto;
+    flex-direction: column;
+    align-items: stretch;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: none;
+    z-index: 60;
+    transform: translateY(110%);
+    transition: transform 0.25s ease;
+  }
+  .filter-bar--sheet-open { transform: translateY(0); }
+  .filter-control { width: 100%; }
+  .filter-trigger { width: 100%; justify-content: space-between; }
+  .filter-reset { margin-left: 0; align-self: flex-start; }
+
+  /* Popovers flow inline below their trigger inside the stacked sheet
+     instead of floating absolutely — the fixed-width absolute popover
+     (built for a wide desktop row) was overflowing past the screen edge
+     on narrow viewports, the "search dropdown goes beyond the container"
+     bug. Flowing in-place with the sheet's own width is overflow-proof by
+     construction, at any screen size. */
+  .filter-bar .filter-popover {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    margin-top: var(--space-2);
+    box-shadow: none;
+    border-color: var(--border-hairline);
+  }
+  .filter-bar .filter-popover--wide .filter-option-list { max-height: 40vh; }
 }
 
 @media (max-width: 480px) {
   .kpi-row { grid-template-columns: 1fr 1fr; }
   .stat-tile__value { font-size: 1.5rem; }
   .app-header__updated { display: none; }
+  /* Title + tab switcher no longer fight for one row's width — the title
+     gets its own line above instead of wrapping mid-word, and the nav
+     stays a single tidy pill instead of ballooning the header's height. */
+  .app-header__row { flex-wrap: wrap; }
 }
 
 .delta-glyph-up::before { content: "\25B2"; }
