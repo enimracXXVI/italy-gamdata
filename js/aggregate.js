@@ -85,14 +85,18 @@ export function topKeysByTotal(records, groupField, metric, n) {
 
 /** Leaderboard: total metric per operator across the filtered records,
  * sorted descending. */
-export function leaderboard(records, metric, limit) {
+export function leaderboard(records, metric, limit, groupField = "operator") {
   const totals = new Map();
   for (const r of records) {
-    const acc = totals.get(r.operator) || { ggr: 0, turnover: 0 };
+    const key = r[groupField];
+    const acc = totals.get(key) || { ggr: 0, turnover: 0 };
     acc.ggr += r.ggr || 0;
     if (typeof r.turnover === "number") acc.turnover += r.turnover;
-    totals.set(r.operator, acc);
+    totals.set(key, acc);
   }
+  // Field is still called `operator` regardless of `groupField` — every
+  // caller (renderBarChart) treats it as "this row's category label", not
+  // specifically an operator name; see the note on renderBarChart.
   return [...totals.entries()]
     .map(([operator, acc]) => ({
       operator,

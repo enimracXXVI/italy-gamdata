@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608140941";
-import * as Agg from "./aggregate.js?v=202608140941";
-import * as Charts from "./charts.js?v=202608140941";
-import * as Quality from "./quality.js?v=202608140941";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608140941";
+} from "./data.js?v=202608141416";
+import * as Agg from "./aggregate.js?v=202608141416";
+import * as Charts from "./charts.js?v=202608141416";
+import * as Quality from "./quality.js?v=202608141416";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608141416";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -569,10 +569,35 @@ async function boot() {
     // exactly one vertical selected (the common case — "just Sportsbetting
     // Online") a "breakdown by vertical" of a single vertical is a pointless
     // 100%-one-color block, so it collapses to a plain total-trend line
-    // instead: same card, but showing something actually useful.
+    // instead: same card, but showing something actually useful. A single
+    // selected month takes priority over both of those: a time-series chart
+    // with one point on the x-axis has no trend to show at all, so it falls
+    // back to a bar-chart breakdown for that one month instead.
     {
+      const singleMonth = months.length === 1;
       const singleVertical = state.verticals.size === 1;
-      if (singleVertical) {
+      if (singleMonth) {
+        const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
+          title: "Market trend",
+          caption: `Only one month is selected, so there's no trend to draw — this is the per-vertical breakdown for ${months[0].label} instead. Pick a wider date range to see it as a trend over time.`,
+        });
+        let items;
+        if (state.metric === "share") {
+          const marketGGR = Agg.sum(filtered, "ggr");
+          items = Agg.leaderboard(filtered, "ggr", verticalOrder.length, "vertical").map((it) => ({
+            operator: it.operator,
+            segments: [{ key: "total", label: "Share", value: marketGGR ? (it.value / marketGGR) * 100 : 0, colorClass: Charts.verticalColorClass(it.operator, verticalOrder) }],
+          }));
+        } else {
+          items = Agg.leaderboard(filtered, state.metric, verticalOrder.length, "vertical").map((it) => ({
+            operator: it.operator,
+            segments: [{ key: "total", label: Charts.METRIC_LABEL[state.metric], value: it.value, colorClass: Charts.verticalColorClass(it.operator, verticalOrder) }],
+          }));
+        }
+        Charts.renderBarChart(body, tableSlot, {
+          items, metric: state.metric, categoryLabel: "Vertical", chartLabel: `Vertical breakdown — ${months[0].label}`,
+        });
+      } else if (singleVertical) {
         const [onlyVertical] = state.verticals;
         const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
           title: "Market trend",
@@ -623,18 +648,25 @@ async function boot() {
     // (non-cumulative) line per operator makes an overtake a literal
     // crossing of two lines.
     {
+      const singleMonth = months.length === 1;
       const shareBasisToggle = createSegmented({
         options: [{ key: "ggr", label: "GGR" }, { key: "turnover", label: "Turnover" }],
         selected: { value: state.operatorShareBasis },
         onChange: (key) => { state.operatorShareBasis = key; render(); },
       });
+      const shareViewDisabledTitle = "Only one month is selected — nothing to stack or trace a line across, so this shows a single-month breakdown instead";
       const shareViewToggle = createSegmented({
-        options: [{ key: "stacked", label: "Stacked" }, { key: "lines", label: "Lines" }],
+        options: [
+          { key: "stacked", label: "Stacked", disabled: singleMonth, title: singleMonth ? shareViewDisabledTitle : undefined },
+          { key: "lines", label: "Lines", disabled: singleMonth, title: singleMonth ? shareViewDisabledTitle : undefined },
+        ],
         selected: { value: state.operatorShareView },
         onChange: (key) => { state.operatorShareView = key; render(); },
       });
       const basisLabel = state.operatorShareBasis === "turnover" ? "Turnover" : "GGR";
-      const viewCaption = state.operatorShareView === "lines"
+      const viewCaption = singleMonth
+        ? `Only one month is selected, so there's no trend to draw — this is the per-operator share breakdown for ${months[0]?.label} instead. Pick a wider date range to see it as a trend over time.`
+        : state.operatorShareView === "lines"
         ? "Each operator's own % share line, independent of the others — use this to spot exactly when one operator's share overtakes another's (where their lines cross)."
         : "Stacked to 100% each month — reads composition, but two adjacent bands overtaking each other can be hard to see since their baselines shift together. Switch to Lines to track that directly.";
       const { body, tableSlot } = Charts.buildCardShell(cards.operatorShare, {
@@ -666,9 +698,18 @@ async function boot() {
       let colored = [...withColor].reverse();
       if (others) colored.unshift({ ...others, label: "Other", colorClass: "series-other" });
       colored = Agg.normalizeStackToShare(colored, months);
-      Charts.renderTimeSeriesChart(body, tableSlot, {
-        months, series: colored, metric: "share", stacked: state.operatorShareView === "stacked", seriesLabel: "Operator",
-      });
+      if (singleMonth) {
+        const items = colored
+          .map((s) => ({ operator: s.label, segments: [{ key: "total", label: "Share", value: s.values[0] || 0, colorClass: s.colorClass }] }))
+          .sort((a, b) => b.segments[0].value - a.segments[0].value);
+        Charts.renderBarChart(body, tableSlot, {
+          items, metric: "share", categoryLabel: "Operator", chartLabel: `Operator share breakdown — ${months[0].label}`,
+        });
+      } else {
+        Charts.renderTimeSeriesChart(body, tableSlot, {
+          months, series: colored, metric: "share", stacked: state.operatorShareView === "stacked", seriesLabel: "Operator",
+        });
+      }
     }
 
     // --- Market overview: leaderboard --------------------------------------

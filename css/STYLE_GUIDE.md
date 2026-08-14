@@ -197,6 +197,17 @@ every deploy.
 | `.info-button-wrap` / `.info-button` / `.info-popover` | The "ⓘ" next to a chart title and its popover — `buildCardShell`'s `caption` text now lives here instead of as permanent on-card text, decluttering the default view. Opens on click/tap (works on touch) and on desktop hover; click always *opens* rather than toggles, since a toggle would fight the hover handler (a mouse click fires `mouseenter` before `click`, so a naive toggle would immediately re-close what hover just opened) |
 | `.table-toggle` / `--active` | The "View as table" / "View as chart" button on every card. `:hover` is scoped `:not(.table-toggle--active)` for the same reason as the segmented control |
 
+**Market trend and Operator share both fall back to a bar-chart breakdown
+when the date range narrows to a single month** (`js/app.js`, the
+`singleMonth` check at the top of each card's render block). A time-series
+chart with one point on the x-axis has nothing to show a trend of — it was
+this exact case that made both cards "useless" with a one-month filter
+applied. Market trend breaks down by vertical for that month; Operator share
+breaks down the same top-7-by-Online-Sportsbetting-GGR set it always uses.
+Both reuse `renderBarChart` (see §6) rather than a new chart type. Operator
+share's Stacked/Lines toggle is disabled (with a `title` explaining why) in
+this state, since neither mode means anything for a single data point.
+
 ---
 
 ## 6. SVG chart internals (`js/charts.js`)
@@ -222,7 +233,7 @@ and scales via CSS width, so one code path serves desktop and mobile.
 | `.viz-bar-segment` | Added alongside `.viz-bar` for each piece of a multi-segment (stacked) bar; adds the thin surface-colored gap stroke between segments |
 | `.viz-bar--dim` | Applied to a bar/area/label when its legend entry is toggled off, or (leaderboard split modes only) to every row whose operator isn't in the "Compare operators" set — segment colors there are fixed to channel/vertical identity, not operator identity, so dimming the whole row is how those modes show emphasis instead |
 | `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) |
-| `.viz-bar-category-label` | The operator name to the left of a bar |
+| `.viz-bar-category-label` | The row's category name to the left of a bar — an operator name for the Operator leaderboard, but `renderBarChart` (`js/charts.js`) is generic: any caller can hand it `{ operator: <any label>, segments }` rows and pass `categoryLabel`/`chartLabel` to relabel the axis/table/aria-text for what those rows actually are |
 | `.viz-cell` | One heatmap cell (vertical × channel) |
 | `.viz-cell-label` | The value text inside a cell |
 | `.viz-heatmap-row-label` / `-col-label` | Row (vertical) / column (channel) headers on a heatmap |

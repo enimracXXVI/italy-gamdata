@@ -520,9 +520,13 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
  * total (sum of segments) drives the row's overall length and end label.
  * `dim`, when true, mutes a row (used to de-emphasize non-compared
  * operators once one of the split modes makes per-operator color emphasis
- * impractical). */
-export function renderBarChart(body, tableSlot, { items, metric, legend }) {
+ * impractical). Despite the field name, `item.operator` is just "this row's
+ * category label" — reused as-is for non-operator breakdowns (e.g. a
+ * single-month vertical breakdown); `categoryLabel`/`chartLabel` control
+ * what the axis/table/aria-label call that category everywhere else. */
+export function renderBarChart(body, tableSlot, { items, metric, legend, categoryLabel = "Operator", chartLabel }) {
   clear(body);
+  chartLabel = chartLabel ?? `${categoryLabel} leaderboard`;
   if (items.length === 0) {
     emptyState(body, "No data for the current filters.");
     return;
@@ -538,7 +542,7 @@ export function renderBarChart(body, tableSlot, { items, metric, legend }) {
   const max = Math.max(...totals, 1);
   const xScale = (v) => Math.max(0, (v / max) * plotW);
 
-  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Leaderboard" }, "viz-svg");
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": chartLabel }, "viz-svg");
 
   const maxLabelChars = 24;
   const truncate = (s) => (s.length > maxLabelChars ? `${s.slice(0, maxLabelChars - 1)}…` : s);
@@ -591,8 +595,8 @@ export function renderBarChart(body, tableSlot, { items, metric, legend }) {
   clear(tableSlot);
   const segmentKeys = segmented ? items[0].segments.map((s) => s.label) : [];
   tableSlot.appendChild(buildTable({
-    caption: `Operator leaderboard (${METRIC_LABEL[metric]})`,
-    columns: ["Operator", ...segmentKeys, "Total"],
+    caption: `${chartLabel} (${METRIC_LABEL[metric]})`,
+    columns: [categoryLabel, ...segmentKeys, "Total"],
     rows: items.map((it, i) => [
       it.operator,
       ...(segmented ? it.segments.map((seg) => formatMetric(seg.value, metric)) : []),
