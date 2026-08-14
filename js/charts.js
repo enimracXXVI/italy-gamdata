@@ -297,8 +297,8 @@ function buildInfoButton(text) {
  * (the "what am I looking at" explanation) lives behind a small (i) button
  * next to the title rather than as permanent text — hover or tap/click to
  * read it, so the card's default state is just the chart. `extra` is an
- * optional DOM node (e.g. a small local toggle) inserted before the table
- * button. */
+ * optional DOM node, or array of them (e.g. small local toggles), inserted
+ * before the table button. */
 export function buildCardShell(card, { title, caption, extra }) {
   clear(card);
   const header = document.createElement("div");
@@ -314,7 +314,7 @@ export function buildCardShell(card, { title, caption, extra }) {
 
   const controls = document.createElement("div");
   controls.className = "chart-card__controls";
-  if (extra) controls.appendChild(extra);
+  if (extra) for (const el of Array.isArray(extra) ? extra : [extra]) controls.appendChild(el);
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "table-toggle";

@@ -211,6 +211,7 @@ export function createDateRangeControl({ months, value, onChange }) {
 
   const presets = [
     { id: "all", label: "All time", range: () => ({ from: months[0]?.key ?? null, to: maxKey }) },
+    { id: "1", label: "Last month", range: () => presetRange(1) },
     { id: "3", label: "Last 3 months", range: () => presetRange(3) },
     { id: "6", label: "Last 6 months", range: () => presetRange(6) },
     { id: "12", label: "Last 12 months", range: () => presetRange(12) },

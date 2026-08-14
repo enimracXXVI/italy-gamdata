@@ -121,19 +121,19 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-popover__footer` | Row holding Clear + the "Up to N" hint |
 | `.filter-popover__clear` | The small "Clear" button in a multi-select popover footer |
 | `.filter-popover__hint` | Muted helper text ("Up to 6") |
-| `.filter-preset-list` / `.filter-preset` | Date-range preset rows (All time, Last 3/6/12 months, YTD, Custom) |
+| `.filter-preset-list` / `.filter-preset` | Date-range preset rows (All time, Last month, Last 3/6/12 months, YTD, Custom) — "Last month" is the single most recent month with data, not the current calendar month (which may have none yet) |
 | `.filter-preset__check` | The ✓ mark, visible only on `.filter-preset--selected` |
 | `.filter-preset-custom` | Footer row holding the two custom month `<select>`s |
 | `.filter-date-select` | Each of those two `<select>` elements |
-| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle, the Operator share card's local GGR/Turnover toggle, and the Operator leaderboard's Total/By channel/By vertical toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click. `:disabled` (used by the leaderboard toggle when a split mode doesn't apply to the current filters) is muted and non-interactive but stays visible with a `title` tooltip explaining why, rather than vanishing |
+| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle, the Operator share card's local GGR/Turnover and Stacked/Lines toggles, and the Operator leaderboard's Total/By channel/By vertical toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click. `:disabled` (used by the leaderboard toggle when a split mode doesn't apply to the current filters) is muted and non-interactive but stays visible with a `title` tooltip explaining why, rather than vanishing |
 | `.filter-reset` | "Reset filters" text button, right-aligned |
 
 **Every filter/view choice is reflected in the URL** (`app.js` `syncURL()` /
 the `urlParams` block in `boot()`), via `history.replaceState` — no history
 spam, just live-updates the current entry. Covers date range, verticals,
 channels, compare-operators (in selection order, so a shared link reproduces
-the same colors), the metric toggle, the Operator-share GGR/Turnover basis,
-the leaderboard split mode, and the active tab. Read back on load with
+the same colors), the metric toggle, the Operator-share GGR/Turnover basis
+and Stacked/Lines view, the leaderboard split mode, and the active tab. Read back on load with
 validation against the current dataset (unknown month keys / operator names
 / enum values fall back to defaults instead of throwing — protects against a
 stale link after the sheet's shape changes). `createDateRangeControl` was
@@ -155,6 +155,16 @@ against unrelated anchor-driven jumps, but it was not what was causing this
 one — that turned out to be the "shrinks then clamps" behavior above, not
 scroll anchoring, which only matters for content whose *final* size differs
 from where it started.
+
+**Every static asset URL carries a `?v=` cache-busting marker** — the two
+tags in `index.html` and all 4 imports at the top of `js/app.js` (its only
+file with imports; nothing else in `js/` imports anything, so that's the
+complete list). GitHub Pages' CDN caches each file independently for
+several minutes; without a version marker, a visitor loading the site right
+after a deploy can end up with a mix of fresh and stale files — e.g. new
+markup running against an old cached `components.js` that still has an
+already-fixed bug. Bump all 6 occurrences together, to the same value, on
+every deploy.
 
 ---
 
@@ -181,7 +191,7 @@ from where it started.
 | `.chart-card__header` | Title row on the left, controls (optional local toggle + "View as table") on the right |
 | `.chart-card__title-row` | Wraps the `<h3>` title and its (i) info button |
 | `.chart-card__title` | Chart title, e.g. "Market trend by vertical" |
-| `.chart-card__controls` | Right-side cluster in the header: an optional `extra` node (e.g. Operator share's local GGR/Turnover toggle) plus the table-view button |
+| `.chart-card__controls` | Right-side cluster in the header: an optional `extra` node — or array of nodes, e.g. Operator share's local GGR/Turnover toggle *and* its Stacked/Lines view toggle side by side — plus the table-view button |
 | `.chart-card__caption` | Used in two places with different weight: as the always-visible "N row(s)" summary line in the Data Quality tables, and as the *content* rendered inside a chart's `.info-popover` (see below) — never as permanent text on a dashboard chart card anymore |
 | `.chart-card__empty` | Centered placeholder text when a chart has nothing to show (e.g. no operators picked yet) |
 | `.info-button-wrap` / `.info-button` / `.info-popover` | The "ⓘ" next to a chart title and its popover — `buildCardShell`'s `caption` text now lives here instead of as permanent on-card text, decluttering the default view. Opens on click/tap (works on touch) and on desktop hover; click always *opens* rather than toggles, since a toggle would fight the hover handler (a mouse click fires `mouseenter` before `click`, so a naive toggle would immediately re-close what hover just opened) |

@@ -1,13 +1,21 @@
 // js/app.js — bootstraps the dashboard: fetch the sheet, build the filter
 // bar, and re-render every chart/tile whenever the filter state changes.
+//
+// The `?v=` on every import below (and on the two tags in index.html) is
+// cache-busting: GitHub Pages' CDN caches each static file independently for
+// several minutes, so without a version marker a fresh deploy can leave a
+// visitor's browser mixing new files with a stale cached one — e.g. running
+// new markup/CSS against an old cached components.js, silently resurrecting
+// an already-fixed bug. Bump every `v=` value together on every deploy (all
+// 6 occurrences: this file's 4 imports + the 2 tags in index.html).
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js";
-import * as Agg from "./aggregate.js";
-import * as Charts from "./charts.js";
-import * as Quality from "./quality.js";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js";
+} from "./data.js?v=202608140941";
+import * as Agg from "./aggregate.js?v=202608140941";
+import * as Charts from "./charts.js?v=202608140941";
+import * as Quality from "./quality.js?v=202608140941";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608140941";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -317,6 +325,7 @@ async function boot() {
   const VALID_METRICS = new Set(["ggr", "turnover", "hold", "share"]);
   const VALID_BASIS = new Set(["ggr", "turnover"]);
   const VALID_LEADERBOARD_MODES = new Set(["total", "channel", "vertical"]);
+  const VALID_SHARE_VIEWS = new Set(["stacked", "lines"]);
 
   const urlParams = new URLSearchParams(window.location.search);
   const urlFrom = urlParams.get("from");
@@ -327,6 +336,7 @@ async function boot() {
   const urlMetric = urlParams.get("metric");
   const urlBasis = urlParams.get("basis");
   const urlLeaderboardMode = urlParams.get("lb");
+  const urlShareView = urlParams.get("shareview");
   const urlTab = urlParams.get("tab");
 
   const state = {
@@ -337,6 +347,7 @@ async function boot() {
     operators: new Set(urlOperators),
     metric: urlMetric && VALID_METRICS.has(urlMetric) ? urlMetric : "ggr",
     operatorShareBasis: urlBasis && VALID_BASIS.has(urlBasis) ? urlBasis : "ggr",
+    operatorShareView: urlShareView && VALID_SHARE_VIEWS.has(urlShareView) ? urlShareView : "stacked",
     leaderboardMode: urlLeaderboardMode && VALID_LEADERBOARD_MODES.has(urlLeaderboardMode) ? urlLeaderboardMode : "total",
   };
   if (state.from > state.to) { state.from = allMonths[0].key; state.to = allMonths[allMonths.length - 1].key; }
@@ -358,6 +369,7 @@ async function boot() {
     for (const op of state.operators) params.append("op", op);
     if (state.metric !== "ggr") params.set("metric", state.metric);
     if (state.operatorShareBasis !== "ggr") params.set("basis", state.operatorShareBasis);
+    if (state.operatorShareView !== "stacked") params.set("shareview", state.operatorShareView);
     if (state.leaderboardMode !== "total") params.set("lb", state.leaderboardMode);
     if (activeTab !== "dashboard") params.set("tab", activeTab);
     const qs = params.toString();
@@ -453,6 +465,7 @@ async function boot() {
       state.operators = new Set();
       state.metric = "ggr";
       state.operatorShareBasis = "ggr";
+      state.operatorShareView = "stacked";
       state.leaderboardMode = "total";
       buildFilterBar();
       render();
@@ -597,24 +610,37 @@ async function boot() {
     }
 
     // --- Market overview: operator share ------------------------------------
-    // Always a 100%-stacked composition view — this card is titled "share",
-    // so it always shows share, on its own local GGR/Turnover toggle rather
-    // than the page-wide metric toggle (which also has Margin %/Share %
-    // options that don't apply here and would silently produce the exact
-    // same GGR-share chart, making the global toggle look broken for this
-    // one card). Absolute € trend already lives in the KPI tiles and the
-    // leaderboard; this chart's job is "how has the mix shifted".
+    // Always a share view — this card is titled "share", so it shows share
+    // on its own local GGR/Turnover toggle rather than the page-wide metric
+    // toggle (which also has Margin %/Share % options that don't apply here
+    // and would silently produce the exact same GGR-share chart, making the
+    // global toggle look broken for this one card). Absolute € trend already
+    // lives in the KPI tiles and the leaderboard; this chart's job is "how
+    // has the mix shifted". Two view modes, same underlying data: "Stacked"
+    // reads composition (how big is each slice of the whole), "Lines" trades
+    // that for legibility of *rank* — a 100%-stack can bury one operator's
+    // band overtaking another's inside a shifting baseline, where a plain
+    // (non-cumulative) line per operator makes an overtake a literal
+    // crossing of two lines.
     {
       const shareBasisToggle = createSegmented({
         options: [{ key: "ggr", label: "GGR" }, { key: "turnover", label: "Turnover" }],
         selected: { value: state.operatorShareBasis },
         onChange: (key) => { state.operatorShareBasis = key; render(); },
       });
+      const shareViewToggle = createSegmented({
+        options: [{ key: "stacked", label: "Stacked" }, { key: "lines", label: "Lines" }],
+        selected: { value: state.operatorShareView },
+        onChange: (key) => { state.operatorShareView = key; render(); },
+      });
       const basisLabel = state.operatorShareBasis === "turnover" ? "Turnover" : "GGR";
+      const viewCaption = state.operatorShareView === "lines"
+        ? "Each operator's own % share line, independent of the others — use this to spot exactly when one operator's share overtakes another's (where their lines cross)."
+        : "Stacked to 100% each month — reads composition, but two adjacent bands overtaking each other can be hard to see since their baselines shift together. Switch to Lines to track that directly.";
       const { body, tableSlot } = Charts.buildCardShell(cards.operatorShare, {
         title: "Operator share",
-        caption: `Top 7 operators (ranked by Online Sportsbetting GGR over the selected date range, regardless of the Vertical/Channel filters above) — their % share of total ${basisLabel}, per month. Independent of the GGR/Turnover/Margin/Share toggle above, which scopes the rest of the dashboard.`,
-        extra: shareBasisToggle.el,
+        caption: `Top 7 operators (ranked by Online Sportsbetting GGR over the selected date range, regardless of the Vertical/Channel filters above) — their % share of total ${basisLabel}, per month. Independent of the GGR/Turnover/Margin/Share toggle above, which scopes the rest of the dashboard. ${viewCaption}`,
+        extra: [shareBasisToggle.el, shareViewToggle.el],
       });
       // "Top 7" is always auto-detected — ranked by Online Sportsbetting GGR
       // specifically, over the current date range only, so the same set of
@@ -641,7 +667,7 @@ async function boot() {
       if (others) colored.unshift({ ...others, label: "Other", colorClass: "series-other" });
       colored = Agg.normalizeStackToShare(colored, months);
       Charts.renderTimeSeriesChart(body, tableSlot, {
-        months, series: colored, metric: "share", stacked: true, seriesLabel: "Operator",
+        months, series: colored, metric: "share", stacked: state.operatorShareView === "stacked", seriesLabel: "Operator",
       });
     }
 
