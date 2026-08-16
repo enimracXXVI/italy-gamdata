@@ -816,6 +816,11 @@ button { font-family: inherit; }
   text-anchor: start;
 }
 
+.viz-diverging-bar--pos { fill: var(--delta-good); }
+.viz-diverging-bar--neg { fill: var(--delta-bad); }
+.viz-bar-label--good { fill: var(--delta-good); }
+.viz-bar-label--bad { fill: var(--delta-bad); }
+
 .viz-cell { cursor: pointer; stroke: var(--surface-card); stroke-width: 2; }
 .viz-cell-label {
   font-size: 11px;

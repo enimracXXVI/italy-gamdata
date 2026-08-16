@@ -48,8 +48,8 @@ setting was just a second thing to get out of sync with the other).
 | `--grid-line` | `#e1e0d9` | `#2c2c2a` | Horizontal gridlines inside charts |
 | `--axis-line` | `#c3c2b7` | `#383835` | Chart axis lines + the dashed hover crosshair |
 | `--focus-ring` | `#2a78d6` | `#3987e5` | `:focus-visible` outline on interactive controls |
-| `--delta-good` | `#006300` | `#0ca30c` | KPI tile up-arrow text (metric improved) |
-| `--delta-bad` | `#d03b3b` | `#d03b3b` | KPI tile down-arrow text (metric worsened) |
+| `--delta-good` | `#006300` | `#0ca30c` | KPI tile up-arrow text (metric improved); also the Growth-by-vertical/-channel diverging bars' positive fill + value-label ink (`.viz-diverging-bar--pos`, `.viz-bar-label--good`) — same meaning (growing vs. shrinking), so the same token, not a fresh diverging pair |
+| `--delta-bad` | `#d03b3b` | `#d03b3b` | KPI tile down-arrow text (metric worsened); also the negative-growth counterpart of the above (`.viz-diverging-bar--neg`, `.viz-bar-label--bad`) |
 | `--status-good/warning/serious/critical` | see file | see file | Reserved status scale — `--status-warning` backs the data-quality warning banner; the rest are available for future alerting |
 | `--series-1`…`--series-8` | palette hues | palette hues | Categorical identity (verticals, operators, groups) — see §7 |
 | `--series-other` | `#b3b2ac` | `#5c5b56` | "Other" fold-in bucket + de-emphasized bars |
@@ -172,7 +172,8 @@ the `urlParams` block in `boot()`), via `history.replaceState` — no history
 spam, just live-updates the current entry. Covers date range, verticals,
 channels, compare-operators (in selection order, so a shared link reproduces
 the same colors), the metric toggle, the Operator-share GGR/Turnover basis
-and Stacked/Lines view, the leaderboard split mode, and the active tab. Read back on load with
+and Stacked/Lines view, the leaderboard split mode, each Growth card's
+MoM/YoY toggle, and the active tab. Read back on load with
 validation against the current dataset (unknown month keys / operator names
 / enum values fall back to defaults instead of throwing — protects against a
 stale link after the sheet's shape changes). `createDateRangeControl` was
@@ -253,6 +254,27 @@ fall back to — so it shows an explanatory empty state instead. Operator
 share's Stacked/Lines toggle is disabled (with a `title` explaining why) in
 this state, since neither mode means anything for a single data point.
 
+**"Growth by vertical" and "Growth by channel"** (`js/app.js`, in the same
+"Market overview" section) always show something regardless of whether any
+operator is selected in "Compare operators" — that section is a separate
+concern (per-operator trend), while these are market-level questions. Both
+are always GGR-based (a local MoM/YoY toggle, not the page metric toggle —
+same reasoning as the Year-over-year KPI tile: Margin %/Share % aren't
+quantities you take a period-over-period delta of). Fixing the default date
+range to "Last month" (above) surfaced a real bug in `momPercent`: it used
+to compute "latest vs. prior" only from months inside the *currently
+selected range* — fine when the default was "All time," but with a
+one-month range there's no second month in range to compare against, so
+every MoM figure (including the existing top KPI tiles, not just these new
+cards) silently went blank. `momPercent` now takes a scope predicate and
+looks at the actual preceding calendar month directly via `allMonths`/
+`records`, the same way `yoyPercent` already looked at the actual same
+month last year — the "latest" side still respects the date range, only the
+comparison anchor doesn't, matching `yoyPercent`'s existing behavior
+exactly. Same `momScope`/`yoyScope` predicate pattern powers both: default
+scope is the page-wide vertical/channel filters, and each Growth-card row
+narrows it to just that one vertical or channel.
+
 ---
 
 ## 6. SVG chart internals (`js/charts.js`)
@@ -279,6 +301,8 @@ and scales via CSS width, so one code path serves desktop and mobile.
 | `.viz-bar--dim` | Applied to a bar/area/label when its legend entry is toggled off, or (leaderboard split modes only) to every row whose operator isn't in the "Compare operators" set — segment colors there are fixed to channel/vertical identity, not operator identity, so dimming the whole row is how those modes show emphasis instead |
 | `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) — optionally followed by `(N%)` when an item carries a `note` (e.g. the single-month Market trend breakdown adds each vertical's % of the total alongside its € figure). `renderBarChart` widens its own right margin (`marginR`, 64px → 130px) whenever any item has a `note`, since the longer combined text overflowed past the card's own edge at the old margin — the SVG doesn't clip content by default |
 | `.viz-bar-category-label` | The row's category name to the left of a bar — an operator name for the Operator leaderboard, but `renderBarChart` (`js/charts.js`) is generic: any caller can hand it `{ operator: <any label>, segments }` rows and pass `categoryLabel`/`chartLabel` to relabel the axis/table/aria-text for what those rows actually are. Left-aligned (`text-anchor: start`) at the card's left edge, not right-aligned against the bar — a right-aligned shared column left a dead gap before any label shorter than the longest one in the set (e.g. "Casino" next to "Horse Racing Fixed Odds"); left-aligned, that same slack falls after the label instead, reading as normal column spacing rather than a gap. Its column width (`labelColW`) is still sized to the longest label actually present (capped at the same width the old fixed constant used), so the bars all still start at one consistent x regardless of alignment |
+| `.viz-diverging-bar` + `--pos` / `--neg` | Bars in `renderDivergingBarChart` (Growth by vertical/channel, `js/charts.js`) — grow left/right from a center 0% line instead of from a shared left edge. `--pos`/`--neg` carry `--delta-good`/`--delta-bad`, not a categorical hue: growth direction is a *state* (growing vs. shrinking), and the dataviz color rule for a series that means good/bad is "wears status/delta tokens, never categorical," so it reuses the exact pair the KPI tiles already use for the same meaning rather than a fresh diverging pair |
+| `.viz-bar-label--good` / `--bad` | Growth-chart value-label ink, same `--delta-good`/`--delta-bad` pair as the bars — every value also carries its own `+`/`-` sign, which is the required label pairing for a state/status color (never color alone) |
 | `.viz-cell` | One heatmap cell (vertical × channel) |
 | `.viz-cell-label` | The value text inside a cell |
 | `.viz-heatmap-row-label` / `-col-label` | Row (vertical) / column (channel) headers on a heatmap |

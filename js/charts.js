@@ -621,6 +621,91 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
 }
 
 // ---------------------------------------------------------------------------
+// Diverging bar chart (growth vs. a baseline — MoM/YoY by category)
+// ---------------------------------------------------------------------------
+
+/** `items`: [{ key, value }] — `value` is a signed growth percent (12.4 for
+ * +12.4%, -8.1 for -8.1%) or `null`/`undefined` when there's nothing to
+ * compare against (e.g. no same-month-last-year data yet). Bars grow from a
+ * center 0% line, right for growth, left for decline. This is a *state*
+ * (growing vs. shrinking), not a series identity, so it's colored with the
+ * same --delta-good/--delta-bad pair the KPI tiles already use for exactly
+ * this meaning — not a categorical hue — and every value carries its own
+ * +/- sign as the required label pairing for a state color. */
+export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLabel, chartLabel }) {
+  clear(body);
+  if (items.length === 0) {
+    emptyState(body, "No data for the current filters.");
+    return;
+  }
+  const rowH = 26, gap = 8;
+  const marginL = 8, marginR = 64, marginT = 4, marginB = 4;
+  const maxLabelChars = 24;
+  const truncate = (s) => (s.length > maxLabelChars ? `${s.slice(0, maxLabelChars - 1)}…` : s);
+  const longestLabel = Math.max(...items.map((it) => truncate(String(it.key ?? "")).length), 1);
+  const labelColW = Math.min(168, Math.max(40, Math.round(longestLabel * 6.3 + 16)));
+  const W = measureWidth(body);
+  const barAreaX0 = marginL + labelColW;
+  const barAreaW = Math.max(0, W - marginL - labelColW - marginR);
+  const centerX = barAreaX0 + barAreaW / 2;
+  const halfW = barAreaW / 2;
+  const H = marginT + marginB + items.length * (rowH + gap) - gap;
+
+  const maxAbs = Math.max(...items.map((it) => Math.abs(it.value ?? 0)), 1);
+  const xScale = (v) => (Math.abs(v) / maxAbs) * halfW;
+
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": chartLabel }, "viz-svg");
+  svg.appendChild(svgEl("line", { x1: centerX, x2: centerX, y1: marginT, y2: H - marginB }, "viz-baseline"));
+
+  items.forEach((it, i) => {
+    const y = marginT + i * (rowH + gap);
+
+    const label = svgEl("text", { x: marginL, y: y + rowH / 2 + 4 }, "viz-bar-category-label");
+    label.textContent = truncate(String(it.key ?? ""));
+    svg.appendChild(label);
+
+    const hasValue = typeof it.value === "number" && Number.isFinite(it.value);
+    const positive = hasValue && it.value >= 0;
+    let valueX = centerX, anchor = "middle", valueText = "—", labelDirClass = "";
+    if (hasValue) {
+      const w = xScale(it.value);
+      if (w > 0) {
+        const rectAttrs = positive ? { x: centerX, y, width: w, height: rowH } : { x: centerX - w, y, width: w, height: rowH };
+        svg.appendChild(svgEl("rect", rectAttrs, `viz-diverging-bar ${positive ? "viz-diverging-bar--pos" : "viz-diverging-bar--neg"}`));
+      }
+      valueX = positive ? centerX + w + 8 : centerX - w - 8;
+      anchor = positive ? "start" : "end";
+      valueText = `${positive ? "+" : ""}${it.value.toFixed(1)}%`;
+      labelDirClass = positive ? "viz-bar-label--good" : "viz-bar-label--bad";
+    }
+    const valueLabel = svgEl("text", { x: valueX, y: y + rowH / 2 + 4, "text-anchor": anchor }, `viz-bar-label ${labelDirClass}`);
+    valueLabel.textContent = valueText;
+    svg.appendChild(valueLabel);
+
+    const hitArea = svgEl("rect", { x: marginL, y, width: Math.max(0, W - marginL - marginR), height: rowH }, "viz-hit-rect");
+    svg.appendChild(hitArea);
+    const onHover = (evt) => showTooltip(evt.clientX, evt.clientY, String(it.key ?? ""), [
+      { label: valueColumnLabel, value: hasValue ? valueText : "No comparable prior period" },
+    ]);
+    hitArea.addEventListener("pointermove", onHover);
+    hitArea.addEventListener("pointerdown", onHover);
+    hitArea.addEventListener("pointerleave", hideTooltip);
+  });
+
+  body.appendChild(svg);
+
+  clear(tableSlot);
+  tableSlot.appendChild(buildTable({
+    caption: chartLabel,
+    columns: ["Category", valueColumnLabel],
+    rows: items.map((it) => [
+      String(it.key ?? ""),
+      typeof it.value === "number" && Number.isFinite(it.value) ? `${it.value >= 0 ? "+" : ""}${it.value.toFixed(1)}%` : "—",
+    ]),
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Heatmap (small multiples: one per operator, Vertical x Channel)
 // ---------------------------------------------------------------------------
 

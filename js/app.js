@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608161345";
-import * as Agg from "./aggregate.js?v=202608161345";
-import * as Charts from "./charts.js?v=202608161345";
-import * as Quality from "./quality.js?v=202608161345";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608161345";
+} from "./data.js?v=202608161355";
+import * as Agg from "./aggregate.js?v=202608161355";
+import * as Charts from "./charts.js?v=202608161355";
+import * as Quality from "./quality.js?v=202608161355";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608161355";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -25,6 +25,8 @@ const lastUpdatedEl = document.getElementById("last-updated");
 const cards = {
   verticalTrend: document.getElementById("card-vertical-trend"),
   operatorShare: document.getElementById("card-group-share"),
+  growthVertical: document.getElementById("card-growth-vertical"),
+  growthChannel: document.getElementById("card-growth-channel"),
   leaderboard: document.getElementById("card-leaderboard"),
   compareTrend: document.getElementById("card-compare-trend"),
   compareIndexed: document.getElementById("card-compare-indexed"),
@@ -353,6 +355,7 @@ async function boot() {
   const VALID_BASIS = new Set(["ggr", "turnover"]);
   const VALID_LEADERBOARD_MODES = new Set(["total", "channel", "vertical"]);
   const VALID_SHARE_VIEWS = new Set(["stacked", "lines"]);
+  const VALID_GROWTH_PERIODS = new Set(["mom", "yoy"]);
 
   const urlParams = new URLSearchParams(window.location.search);
   const urlFrom = urlParams.get("from");
@@ -364,6 +367,8 @@ async function boot() {
   const urlBasis = urlParams.get("basis");
   const urlLeaderboardMode = urlParams.get("lb");
   const urlShareView = urlParams.get("shareview");
+  const urlGrowthVertical = urlParams.get("gv");
+  const urlGrowthChannel = urlParams.get("gc");
   const urlTab = urlParams.get("tab");
 
   const state = {
@@ -378,6 +383,8 @@ async function boot() {
     operatorShareBasis: urlBasis && VALID_BASIS.has(urlBasis) ? urlBasis : "ggr",
     operatorShareView: urlShareView && VALID_SHARE_VIEWS.has(urlShareView) ? urlShareView : "stacked",
     leaderboardMode: urlLeaderboardMode && VALID_LEADERBOARD_MODES.has(urlLeaderboardMode) ? urlLeaderboardMode : "total",
+    growthByVerticalPeriod: urlGrowthVertical && VALID_GROWTH_PERIODS.has(urlGrowthVertical) ? urlGrowthVertical : "mom",
+    growthByChannelPeriod: urlGrowthChannel && VALID_GROWTH_PERIODS.has(urlGrowthChannel) ? urlGrowthChannel : "mom",
   };
   if (state.from > state.to) { state.from = allMonths[allMonths.length - 1].key; state.to = allMonths[allMonths.length - 1].key; }
 
@@ -400,6 +407,8 @@ async function boot() {
     if (state.operatorShareBasis !== "ggr") params.set("basis", state.operatorShareBasis);
     if (state.operatorShareView !== "stacked") params.set("shareview", state.operatorShareView);
     if (state.leaderboardMode !== "total") params.set("lb", state.leaderboardMode);
+    if (state.growthByVerticalPeriod !== "mom") params.set("gv", state.growthByVerticalPeriod);
+    if (state.growthByChannelPeriod !== "mom") params.set("gc", state.growthByChannelPeriod);
     if (activeTab !== "dashboard") params.set("tab", activeTab);
     const qs = params.toString();
     window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
@@ -497,6 +506,8 @@ async function boot() {
       state.operatorShareBasis = "ggr";
       state.operatorShareView = "stacked";
       state.leaderboardMode = "total";
+      state.growthByVerticalPeriod = "mom";
+      state.growthByChannelPeriod = "mom";
       buildFilterBar();
       render();
     });
@@ -506,28 +517,35 @@ async function boot() {
     );
   }
 
-  // MoM: latest-vs-prior month totals for a metric, restricted to `months` (the
-  // current date-range filter). YoY: latest month vs the same calendar month
-  // one year earlier, ignoring the date-range filter (it needs a prior year
-  // to exist in the full dataset, not just in the selected range).
-  function momPercent(filtered, months, metric) {
-    const totals = Agg.totalsByMonth(filtered, months, metric);
-    const latest = totals[totals.length - 1] ?? null;
-    const prev = totals.length > 1 ? totals[totals.length - 2] : null;
-    if (latest === null || prev === null || prev === 0) return null;
-    return ((latest - prev) / Math.abs(prev)) * 100;
+  // MoM: latest month in the current range vs. the preceding calendar month,
+  // like YoY (below), ignoring the date-range filter for the "prior" side —
+  // with a narrow range (e.g. the "Last month" default) the actual previous
+  // month usually isn't itself inside the selected range, so restricting the
+  // comparison to `months` made MoM silently go blank the moment the range
+  // narrowed to one month. `momScope` mirrors `yoyScope`: defaults to the
+  // page-wide vertical/channel filters, narrowed by a per-category caller.
+  function momPercent(months, metric, momScope = (r) => state.verticals.has(r.vertical) && state.channels.has(r.channel)) {
+    const latestKey = months[months.length - 1]?.key;
+    if (!latestKey) return null;
+    const latestIdx = allMonths.findIndex((m) => m.key === latestKey);
+    if (latestIdx <= 0) return null;
+    const prevKey = allMonths[latestIdx - 1].key;
+    const latest = Agg.sum(records.filter((r) => r.key === latestKey && momScope(r)), metric);
+    const prev = Agg.sum(records.filter((r) => r.key === prevKey && momScope(r)), metric);
+    return prev ? ((latest - prev) / Math.abs(prev)) * 100 : null;
   }
-  function yoyPercent(filtered, months, metric) {
+  // `yoyScope` decides which records count for the "same month last year"
+  // comparison — defaults to the page-wide vertical/channel filters, but a
+  // per-category caller (e.g. one row of Growth by vertical) narrows it to
+  // just that vertical, still respecting the channel filter alongside it.
+  function yoyPercent(filtered, months, metric, yoyScope = (r) => state.verticals.has(r.vertical) && state.channels.has(r.channel)) {
     const latestMonthKey = months[months.length - 1]?.key;
     if (!latestMonthKey) return null;
     const latest = Agg.totalsByMonth(filtered, months, metric).at(-1) ?? null;
     const [y, mm] = latestMonthKey.split("-").map(Number);
     const yoyKey = `${y - 1}-${String(mm).padStart(2, "0")}`;
     if (!allMonths.some((m) => m.key === yoyKey) || latest === null) return null;
-    const yoyVal = Agg.sum(
-      records.filter((r) => r.key === yoyKey && state.verticals.has(r.vertical) && state.channels.has(r.channel)),
-      metric
-    );
+    const yoyVal = Agg.sum(records.filter((r) => r.key === yoyKey && yoyScope(r)), metric);
     return yoyVal ? ((latest - yoyVal) / Math.abs(yoyVal)) * 100 : null;
   }
 
@@ -541,9 +559,9 @@ async function boot() {
     // aren't quantities you can take a year-over-year delta of the same way.
     const yoyPct = yoyPercent(filtered, months, "ggr");
 
-    addTile("Total GGR", Charts.formatMetric(totalGGR, "ggr"), momPercent(filtered, months, "ggr"), "MoM", true);
-    addTile("Total Turnover", Charts.formatMetric(totalTurnover, "turnover"), momPercent(filtered, months, "turnover"), "MoM", true);
-    addTile("Overall margin", Charts.formatMetric(overallMargin, "hold"), momPercent(filtered, months, "hold"), "MoM", true);
+    addTile("Total GGR", Charts.formatMetric(totalGGR, "ggr"), momPercent(months, "ggr"), "MoM", true);
+    addTile("Total Turnover", Charts.formatMetric(totalTurnover, "turnover"), momPercent(months, "turnover"), "MoM", true);
+    addTile("Overall margin", Charts.formatMetric(overallMargin, "hold"), momPercent(months, "hold"), "MoM", true);
     addTile("Year over year (GGR)", yoyPct === null ? "—" : `${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%`, yoyPct, "vs same month last year", true);
   }
 
@@ -757,6 +775,65 @@ async function boot() {
           months, series: colored, metric: "share", stacked: state.operatorShareView === "stacked", seriesLabel: "Operator",
         });
       }
+    }
+
+    // --- Market overview: growth by vertical --------------------------------
+    // Independent of any operator selection — always visible, since "how is
+    // each vertical trending" is a market-level question, not a
+    // compare-operators one. Always GGR-based regardless of the page metric
+    // toggle, same reasoning as the Year-over-year KPI tile: Margin %/Share %
+    // aren't quantities you take a period-over-period delta of the same way.
+    {
+      const growthVerticalToggle = createSegmented({
+        options: [{ key: "mom", label: "MoM" }, { key: "yoy", label: "YoY" }],
+        selected: { value: state.growthByVerticalPeriod },
+        onChange: (key) => { state.growthByVerticalPeriod = key; render(); },
+      });
+      const isYoy = state.growthByVerticalPeriod === "yoy";
+      const { body, tableSlot } = Charts.buildCardShell(cards.growthVertical, {
+        title: "Growth by vertical",
+        caption: isYoy
+          ? "Each vertical's GGR vs. the same month last year, within the selected channel(s) — ignores the date range above (YoY always needs the actual same month a year back)."
+          : "Each vertical's GGR vs. the prior calendar month, within the selected channel(s) — also ignores the date range above, for the same reason.",
+        extra: growthVerticalToggle.el,
+      });
+      const momScope = (v) => (r) => r.vertical === v && state.channels.has(r.channel);
+      const items = verticalOrder.filter((v) => state.verticals.has(v)).map((v) => {
+        const value = isYoy
+          ? yoyPercent(filtered.filter((r) => r.vertical === v), months, "ggr", momScope(v))
+          : momPercent(months, "ggr", momScope(v));
+        return { key: v, value };
+      });
+      Charts.renderDivergingBarChart(body, tableSlot, {
+        items, valueColumnLabel: isYoy ? "YoY %" : "MoM %", chartLabel: `Growth by vertical (${isYoy ? "YoY" : "MoM"})`,
+      });
+    }
+
+    // --- Market overview: growth by channel ---------------------------------
+    {
+      const growthChannelToggle = createSegmented({
+        options: [{ key: "mom", label: "MoM" }, { key: "yoy", label: "YoY" }],
+        selected: { value: state.growthByChannelPeriod },
+        onChange: (key) => { state.growthByChannelPeriod = key; render(); },
+      });
+      const isYoyCh = state.growthByChannelPeriod === "yoy";
+      const { body, tableSlot } = Charts.buildCardShell(cards.growthChannel, {
+        title: "Growth by channel",
+        caption: isYoyCh
+          ? "Online vs. Retail GGR vs. the same month last year, within the selected vertical(s) — ignores the date range above."
+          : "Online vs. Retail GGR vs. the prior calendar month, within the selected vertical(s) — also ignores the date range above, for the same reason.",
+        extra: growthChannelToggle.el,
+      });
+      const momScopeCh = (c) => (r) => r.channel === c && state.verticals.has(r.vertical);
+      const items = channelOrder.filter((c) => state.channels.has(c)).map((c) => {
+        const value = isYoyCh
+          ? yoyPercent(filtered.filter((r) => r.channel === c), months, "ggr", momScopeCh(c))
+          : momPercent(months, "ggr", momScopeCh(c));
+        return { key: c, value };
+      });
+      Charts.renderDivergingBarChart(body, tableSlot, {
+        items, valueColumnLabel: isYoyCh ? "YoY %" : "MoM %", chartLabel: `Growth by channel (${isYoyCh ? "YoY" : "MoM"})`,
+      });
     }
 
     // --- Market overview: leaderboard --------------------------------------
