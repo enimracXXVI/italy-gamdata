@@ -271,9 +271,19 @@ function buildInfoButton(text) {
     if (isOpen) return;
     if (openInfoPopoverCloser) openInfoPopoverCloser();
     popover.hidden = false;
+    popover.classList.remove("info-popover--flip");
     isOpen = true;
     openInfoPopoverCloser = close;
     document.addEventListener("pointerdown", onOutside, true);
+    // The button can sit anywhere along a card's title row, so a fixed
+    // left-anchored popover runs off the right edge of the screen whenever
+    // it's opened from a button positioned more than ~280px from the left —
+    // exactly the "have to scroll sideways to read it" bug on mobile. Flip
+    // to hang from the right edge of the button instead, once we can
+    // actually measure where it landed.
+    if (popover.getBoundingClientRect().right > window.innerWidth) {
+      popover.classList.add("info-popover--flip");
+    }
   }
   // Click always opens (never toggles-closed) — a toggle here would fight
   // the hover handler below: a mouse click fires `mouseenter` before

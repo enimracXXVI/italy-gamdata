@@ -731,7 +731,11 @@ button { font-family: inherit; }
   left: 0;
   z-index: 40;
   width: max-content;
-  max-width: 280px;
+  /* Never wider than the viewport itself (minus a small margin) regardless
+     of the 280px target — without this, the min() below is pointless on a
+     narrow phone since the popover could still claim more width than the
+     screen has. */
+  max-width: min(280px, calc(100vw - 24px));
   background: var(--surface-raised);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
@@ -740,6 +744,10 @@ button { font-family: inherit; }
   font-size: 0.75rem;
   color: var(--text-secondary);
 }
+/* Hangs from the button's right edge instead of its left — added once JS
+   measures that the default left-anchored placement would run off the
+   right side of the viewport (buildInfoButton in charts.js). */
+.info-popover--flip { left: auto; right: 0; }
 
 .table-toggle {
   border: 1px solid var(--border-hairline);

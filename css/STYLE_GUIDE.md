@@ -234,7 +234,7 @@ every deploy.
 | `.chart-card__controls` | Right-side cluster in the header: an optional `extra` node — or array of nodes, e.g. Operator share's local GGR/Turnover toggle *and* its Stacked/Lines view toggle side by side — plus the table-view button |
 | `.chart-card__caption` | Used in two places with different weight: as the always-visible "N row(s)" summary line in the Data Quality tables, and as the *content* rendered inside a chart's `.info-popover` (see below) — never as permanent text on a dashboard chart card anymore |
 | `.chart-card__empty` | Centered placeholder text when a chart has nothing to show (e.g. no operators picked yet) |
-| `.info-button-wrap` / `.info-button` / `.info-popover` | The "ⓘ" next to a chart title and its popover — `buildCardShell`'s `caption` text now lives here instead of as permanent on-card text, decluttering the default view. Opens on click/tap (works on touch) and on desktop hover; click always *opens* rather than toggles, since a toggle would fight the hover handler (a mouse click fires `mouseenter` before `click`, so a naive toggle would immediately re-close what hover just opened) |
+| `.info-button-wrap` / `.info-button` / `.info-popover` | The "ⓘ" next to a chart title and its popover — `buildCardShell`'s `caption` text now lives here instead of as permanent on-card text, decluttering the default view. Opens on click/tap (works on touch) and on desktop hover; click always *opens* rather than toggles, since a toggle would fight the hover handler (a mouse click fires `mouseenter` before `click`, so a naive toggle would immediately re-close what hover just opened). `max-width: min(280px, calc(100vw - 24px))` so it can never claim more width than the viewport has regardless of screen size; on `open()` (`buildInfoButton`, `js/charts.js`) it also measures whether it would run off the right edge of the screen and adds `.info-popover--flip` (hang from the button's right edge instead of its left) if so — the button can sit anywhere along a card's title row, so a fixed left-anchored popover was overflowing the screen on mobile, the "have to scroll sideways to read it" bug |
 | `.table-toggle` / `--active` | The "View as table" / "View as chart" button on every card. `:hover` is scoped `:not(.table-toggle--active)` for the same reason as the segmented control |
 
 **Every trend-over-time card falls back to something else when the date
@@ -254,26 +254,32 @@ fall back to — so it shows an explanatory empty state instead. Operator
 share's Stacked/Lines toggle is disabled (with a `title` explaining why) in
 this state, since neither mode means anything for a single data point.
 
-**"Growth by vertical" and "Growth by channel"** (`js/app.js`, in the same
-"Market overview" section) always show something regardless of whether any
+**"Growth by operator," "Growth by vertical," and "Growth by channel"**
+(`js/app.js`, first three cards in "Market overview" — MoM/YoY is the
+headline read of this dashboard, so they lead the section, above the
+volume/composition charts) always show something regardless of whether any
 operator is selected in "Compare operators" — that section is a separate
-concern (per-operator trend), while these are market-level questions. Both
-are always GGR-based (a local MoM/YoY toggle, not the page metric toggle —
-same reasoning as the Year-over-year KPI tile: Margin %/Share % aren't
-quantities you take a period-over-period delta of). Fixing the default date
-range to "Last month" (above) surfaced a real bug in `momPercent`: it used
-to compute "latest vs. prior" only from months inside the *currently
-selected range* — fine when the default was "All time," but with a
-one-month range there's no second month in range to compare against, so
-every MoM figure (including the existing top KPI tiles, not just these new
-cards) silently went blank. `momPercent` now takes a scope predicate and
-looks at the actual preceding calendar month directly via `allMonths`/
-`records`, the same way `yoyPercent` already looked at the actual same
-month last year — the "latest" side still respects the date range, only the
-comparison anchor doesn't, matching `yoyPercent`'s existing behavior
-exactly. Same `momScope`/`yoyScope` predicate pattern powers both: default
-scope is the page-wide vertical/channel filters, and each Growth-card row
-narrows it to just that one vertical or channel.
+concern (hand-picked per-operator trend over time), while these are
+market-wide "who/what is actually moving right now" questions. Growth by
+operator ranks by GGR within the current filters, top 15 — same convention
+as the Operator leaderboard further down, not tied to which operators (if
+any) are picked in "Compare operators." All three are always GGR-based (a
+local MoM/YoY toggle, not the page metric toggle — same reasoning as the
+Year-over-year KPI tile: Margin %/Share % aren't quantities you take a
+period-over-period delta of). Fixing the default date range to "Last
+month" (above) surfaced a real bug in `momPercent`: it used to compute
+"latest vs. prior" only from months inside the *currently selected
+range* — fine when the default was "All time," but with a one-month range
+there's no second month in range to compare against, so every MoM figure
+(including the existing top KPI tiles, not just these cards) silently went
+blank. `momPercent` now takes a scope predicate and looks at the actual
+preceding calendar month directly via `allMonths`/`records`, the same way
+`yoyPercent` already looked at the actual same month last year — the
+"latest" side still respects the date range, only the comparison anchor
+doesn't, matching `yoyPercent`'s existing behavior exactly. Same
+`momScope`/`yoyScope` predicate pattern powers all three cards: default
+scope is the page-wide vertical/channel filters, and each row narrows it to
+just that one operator, vertical, or channel.
 
 ---
 

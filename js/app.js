@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608161355";
-import * as Agg from "./aggregate.js?v=202608161355";
-import * as Charts from "./charts.js?v=202608161355";
-import * as Quality from "./quality.js?v=202608161355";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608161355";
+} from "./data.js?v=202608161432";
+import * as Agg from "./aggregate.js?v=202608161432";
+import * as Charts from "./charts.js?v=202608161432";
+import * as Quality from "./quality.js?v=202608161432";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608161432";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -25,6 +25,7 @@ const lastUpdatedEl = document.getElementById("last-updated");
 const cards = {
   verticalTrend: document.getElementById("card-vertical-trend"),
   operatorShare: document.getElementById("card-group-share"),
+  growthOperator: document.getElementById("card-growth-operator"),
   growthVertical: document.getElementById("card-growth-vertical"),
   growthChannel: document.getElementById("card-growth-channel"),
   leaderboard: document.getElementById("card-leaderboard"),
@@ -367,6 +368,7 @@ async function boot() {
   const urlBasis = urlParams.get("basis");
   const urlLeaderboardMode = urlParams.get("lb");
   const urlShareView = urlParams.get("shareview");
+  const urlGrowthOperator = urlParams.get("go");
   const urlGrowthVertical = urlParams.get("gv");
   const urlGrowthChannel = urlParams.get("gc");
   const urlTab = urlParams.get("tab");
@@ -383,6 +385,7 @@ async function boot() {
     operatorShareBasis: urlBasis && VALID_BASIS.has(urlBasis) ? urlBasis : "ggr",
     operatorShareView: urlShareView && VALID_SHARE_VIEWS.has(urlShareView) ? urlShareView : "stacked",
     leaderboardMode: urlLeaderboardMode && VALID_LEADERBOARD_MODES.has(urlLeaderboardMode) ? urlLeaderboardMode : "total",
+    growthByOperatorPeriod: urlGrowthOperator && VALID_GROWTH_PERIODS.has(urlGrowthOperator) ? urlGrowthOperator : "mom",
     growthByVerticalPeriod: urlGrowthVertical && VALID_GROWTH_PERIODS.has(urlGrowthVertical) ? urlGrowthVertical : "mom",
     growthByChannelPeriod: urlGrowthChannel && VALID_GROWTH_PERIODS.has(urlGrowthChannel) ? urlGrowthChannel : "mom",
   };
@@ -407,6 +410,7 @@ async function boot() {
     if (state.operatorShareBasis !== "ggr") params.set("basis", state.operatorShareBasis);
     if (state.operatorShareView !== "stacked") params.set("shareview", state.operatorShareView);
     if (state.leaderboardMode !== "total") params.set("lb", state.leaderboardMode);
+    if (state.growthByOperatorPeriod !== "mom") params.set("go", state.growthByOperatorPeriod);
     if (state.growthByVerticalPeriod !== "mom") params.set("gv", state.growthByVerticalPeriod);
     if (state.growthByChannelPeriod !== "mom") params.set("gc", state.growthByChannelPeriod);
     if (activeTab !== "dashboard") params.set("tab", activeTab);
@@ -506,6 +510,7 @@ async function boot() {
       state.operatorShareBasis = "ggr";
       state.operatorShareView = "stacked";
       state.leaderboardMode = "total";
+      state.growthByOperatorPeriod = "mom";
       state.growthByVerticalPeriod = "mom";
       state.growthByChannelPeriod = "mom";
       buildFilterBar();
@@ -617,6 +622,99 @@ async function boot() {
     const compareColorMap = new Map([...state.operators].map((op, i) => [op, Charts.rankColorClass(i)]));
 
     renderKPIs(filtered, months);
+
+    // --- Market overview: growth by operator --------------------------------
+    // MoM/YoY is the headline read of this dashboard, so these three growth
+    // cards lead the section — above the volume/composition charts below.
+    // Ranked by GGR within the current filters (same top-15 convention as
+    // the Operator leaderboard further down), not tied to "Compare
+    // operators" — this is "who's actually moving right now" across the
+    // whole market, not a hand-picked comparison.
+    {
+      const growthOperatorToggle = createSegmented({
+        options: [{ key: "mom", label: "MoM" }, { key: "yoy", label: "YoY" }],
+        selected: { value: state.growthByOperatorPeriod },
+        onChange: (key) => { state.growthByOperatorPeriod = key; render(); },
+      });
+      const isYoyOp = state.growthByOperatorPeriod === "yoy";
+      const { body, tableSlot } = Charts.buildCardShell(cards.growthOperator, {
+        title: "Growth by operator",
+        caption: isYoyOp
+          ? "Top 15 operators by GGR in the current filters — each one's GGR vs. the same month last year, within the selected vertical(s) & channel(s), ignoring the date range above."
+          : "Top 15 operators by GGR in the current filters — each one's GGR vs. the prior calendar month, within the selected vertical(s) & channel(s), also ignoring the date range above.",
+        extra: growthOperatorToggle.el,
+      });
+      const topOps = Agg.topKeysByTotal(filtered, "operator", "ggr", 15);
+      const momScopeOp = (op) => (r) => r.operator === op && state.verticals.has(r.vertical) && state.channels.has(r.channel);
+      const items = topOps.map((op) => {
+        const value = isYoyOp
+          ? yoyPercent(filtered.filter((r) => r.operator === op), months, "ggr", momScopeOp(op))
+          : momPercent(months, "ggr", momScopeOp(op));
+        return { key: op, value };
+      });
+      Charts.renderDivergingBarChart(body, tableSlot, {
+        items, valueColumnLabel: isYoyOp ? "YoY %" : "MoM %", chartLabel: `Growth by operator (${isYoyOp ? "YoY" : "MoM"})`,
+      });
+    }
+
+    // --- Market overview: growth by vertical --------------------------------
+    // Independent of any operator selection — always visible, since "how is
+    // each vertical trending" is a market-level question, not a
+    // compare-operators one. Always GGR-based regardless of the page metric
+    // toggle, same reasoning as the Year-over-year KPI tile: Margin %/Share %
+    // aren't quantities you take a period-over-period delta of the same way.
+    {
+      const growthVerticalToggle = createSegmented({
+        options: [{ key: "mom", label: "MoM" }, { key: "yoy", label: "YoY" }],
+        selected: { value: state.growthByVerticalPeriod },
+        onChange: (key) => { state.growthByVerticalPeriod = key; render(); },
+      });
+      const isYoy = state.growthByVerticalPeriod === "yoy";
+      const { body, tableSlot } = Charts.buildCardShell(cards.growthVertical, {
+        title: "Growth by vertical",
+        caption: isYoy
+          ? "Each vertical's GGR vs. the same month last year, within the selected channel(s) — ignores the date range above (YoY always needs the actual same month a year back)."
+          : "Each vertical's GGR vs. the prior calendar month, within the selected channel(s) — also ignores the date range above, for the same reason.",
+        extra: growthVerticalToggle.el,
+      });
+      const momScope = (v) => (r) => r.vertical === v && state.channels.has(r.channel);
+      const items = verticalOrder.filter((v) => state.verticals.has(v)).map((v) => {
+        const value = isYoy
+          ? yoyPercent(filtered.filter((r) => r.vertical === v), months, "ggr", momScope(v))
+          : momPercent(months, "ggr", momScope(v));
+        return { key: v, value };
+      });
+      Charts.renderDivergingBarChart(body, tableSlot, {
+        items, valueColumnLabel: isYoy ? "YoY %" : "MoM %", chartLabel: `Growth by vertical (${isYoy ? "YoY" : "MoM"})`,
+      });
+    }
+
+    // --- Market overview: growth by channel ---------------------------------
+    {
+      const growthChannelToggle = createSegmented({
+        options: [{ key: "mom", label: "MoM" }, { key: "yoy", label: "YoY" }],
+        selected: { value: state.growthByChannelPeriod },
+        onChange: (key) => { state.growthByChannelPeriod = key; render(); },
+      });
+      const isYoyCh = state.growthByChannelPeriod === "yoy";
+      const { body, tableSlot } = Charts.buildCardShell(cards.growthChannel, {
+        title: "Growth by channel",
+        caption: isYoyCh
+          ? "Online vs. Retail GGR vs. the same month last year, within the selected vertical(s) — ignores the date range above."
+          : "Online vs. Retail GGR vs. the prior calendar month, within the selected vertical(s) — also ignores the date range above, for the same reason.",
+        extra: growthChannelToggle.el,
+      });
+      const momScopeCh = (c) => (r) => r.channel === c && state.verticals.has(r.vertical);
+      const items = channelOrder.filter((c) => state.channels.has(c)).map((c) => {
+        const value = isYoyCh
+          ? yoyPercent(filtered.filter((r) => r.channel === c), months, "ggr", momScopeCh(c))
+          : momPercent(months, "ggr", momScopeCh(c));
+        return { key: c, value };
+      });
+      Charts.renderDivergingBarChart(body, tableSlot, {
+        items, valueColumnLabel: isYoyCh ? "YoY %" : "MoM %", chartLabel: `Growth by channel (${isYoyCh ? "YoY" : "MoM"})`,
+      });
+    }
 
     // --- Market overview: trend by vertical -------------------------------
     // With 2+ verticals selected this is a real composition breakdown. With
@@ -775,65 +873,6 @@ async function boot() {
           months, series: colored, metric: "share", stacked: state.operatorShareView === "stacked", seriesLabel: "Operator",
         });
       }
-    }
-
-    // --- Market overview: growth by vertical --------------------------------
-    // Independent of any operator selection — always visible, since "how is
-    // each vertical trending" is a market-level question, not a
-    // compare-operators one. Always GGR-based regardless of the page metric
-    // toggle, same reasoning as the Year-over-year KPI tile: Margin %/Share %
-    // aren't quantities you take a period-over-period delta of the same way.
-    {
-      const growthVerticalToggle = createSegmented({
-        options: [{ key: "mom", label: "MoM" }, { key: "yoy", label: "YoY" }],
-        selected: { value: state.growthByVerticalPeriod },
-        onChange: (key) => { state.growthByVerticalPeriod = key; render(); },
-      });
-      const isYoy = state.growthByVerticalPeriod === "yoy";
-      const { body, tableSlot } = Charts.buildCardShell(cards.growthVertical, {
-        title: "Growth by vertical",
-        caption: isYoy
-          ? "Each vertical's GGR vs. the same month last year, within the selected channel(s) — ignores the date range above (YoY always needs the actual same month a year back)."
-          : "Each vertical's GGR vs. the prior calendar month, within the selected channel(s) — also ignores the date range above, for the same reason.",
-        extra: growthVerticalToggle.el,
-      });
-      const momScope = (v) => (r) => r.vertical === v && state.channels.has(r.channel);
-      const items = verticalOrder.filter((v) => state.verticals.has(v)).map((v) => {
-        const value = isYoy
-          ? yoyPercent(filtered.filter((r) => r.vertical === v), months, "ggr", momScope(v))
-          : momPercent(months, "ggr", momScope(v));
-        return { key: v, value };
-      });
-      Charts.renderDivergingBarChart(body, tableSlot, {
-        items, valueColumnLabel: isYoy ? "YoY %" : "MoM %", chartLabel: `Growth by vertical (${isYoy ? "YoY" : "MoM"})`,
-      });
-    }
-
-    // --- Market overview: growth by channel ---------------------------------
-    {
-      const growthChannelToggle = createSegmented({
-        options: [{ key: "mom", label: "MoM" }, { key: "yoy", label: "YoY" }],
-        selected: { value: state.growthByChannelPeriod },
-        onChange: (key) => { state.growthByChannelPeriod = key; render(); },
-      });
-      const isYoyCh = state.growthByChannelPeriod === "yoy";
-      const { body, tableSlot } = Charts.buildCardShell(cards.growthChannel, {
-        title: "Growth by channel",
-        caption: isYoyCh
-          ? "Online vs. Retail GGR vs. the same month last year, within the selected vertical(s) — ignores the date range above."
-          : "Online vs. Retail GGR vs. the prior calendar month, within the selected vertical(s) — also ignores the date range above, for the same reason.",
-        extra: growthChannelToggle.el,
-      });
-      const momScopeCh = (c) => (r) => r.channel === c && state.verticals.has(r.vertical);
-      const items = channelOrder.filter((c) => state.channels.has(c)).map((c) => {
-        const value = isYoyCh
-          ? yoyPercent(filtered.filter((r) => r.channel === c), months, "ggr", momScopeCh(c))
-          : momPercent(months, "ggr", momScopeCh(c));
-        return { key: c, value };
-      });
-      Charts.renderDivergingBarChart(body, tableSlot, {
-        items, valueColumnLabel: isYoyCh ? "YoY %" : "MoM %", chartLabel: `Growth by channel (${isYoyCh ? "YoY" : "MoM"})`,
-      });
     }
 
     // --- Market overview: leaderboard --------------------------------------
