@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608141621";
-import * as Agg from "./aggregate.js?v=202608141621";
-import * as Charts from "./charts.js?v=202608141621";
-import * as Quality from "./quality.js?v=202608141621";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608141621";
+} from "./data.js?v=202608161345";
+import * as Agg from "./aggregate.js?v=202608161345";
+import * as Charts from "./charts.js?v=202608161345";
+import * as Quality from "./quality.js?v=202608161345";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608161345";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -367,7 +367,9 @@ async function boot() {
   const urlTab = urlParams.get("tab");
 
   const state = {
-    from: urlFrom && monthKeySet.has(urlFrom) ? urlFrom : allMonths[0].key,
+    // Default view is the most recent month, not the whole dataset — a
+    // multi-year "All time" view is rarely what you want to land on.
+    from: urlFrom && monthKeySet.has(urlFrom) ? urlFrom : allMonths[allMonths.length - 1].key,
     to: urlTo && monthKeySet.has(urlTo) ? urlTo : allMonths[allMonths.length - 1].key,
     verticals: urlVerticals.length ? new Set(urlVerticals) : new Set(verticalOrder),
     channels: urlChannels.length ? new Set(urlChannels) : new Set(channelOrder),
@@ -377,7 +379,7 @@ async function boot() {
     operatorShareView: urlShareView && VALID_SHARE_VIEWS.has(urlShareView) ? urlShareView : "stacked",
     leaderboardMode: urlLeaderboardMode && VALID_LEADERBOARD_MODES.has(urlLeaderboardMode) ? urlLeaderboardMode : "total",
   };
-  if (state.from > state.to) { state.from = allMonths[0].key; state.to = allMonths[allMonths.length - 1].key; }
+  if (state.from > state.to) { state.from = allMonths[allMonths.length - 1].key; state.to = allMonths[allMonths.length - 1].key; }
 
   let activeTab = urlTab === "quality" ? "quality" : "dashboard";
 
@@ -486,7 +488,7 @@ async function boot() {
     });
 
     const resetBtn = createResetButton(() => {
-      state.from = allMonths[0].key;
+      state.from = allMonths[allMonths.length - 1].key;
       state.to = allMonths[allMonths.length - 1].key;
       state.verticals = new Set(verticalOrder);
       state.channels = new Set(channelOrder);
@@ -580,6 +582,14 @@ async function boot() {
 
     const filtered = Agg.filterRecords(records, state);
     const months = monthsInRange();
+    // A time-series chart with one point on the x-axis has nothing to draw
+    // a line or stack across — worse, a single-point line path (`M x,y`
+    // with no `L` segment) is a real element with zero bounding-box size,
+    // so it silently renders nothing rather than erroring or falling back.
+    // Every chart below that's normally a trend-over-time switches to a
+    // single-period breakdown (bar chart, or an explicit "need more than
+    // one month" note) when this is true.
+    const singleMonth = months.length === 1;
 
     // Colors for the compare-set: assigned by selection order (index 0..5),
     // never by a hash of the name. A hash into 8 slots collides constantly
@@ -600,7 +610,6 @@ async function boot() {
     // with one point on the x-axis has no trend to show at all, so it falls
     // back to a bar-chart breakdown for that one month instead.
     {
-      const singleMonth = months.length === 1;
       const singleVertical = state.verticals.size === 1;
       if (singleMonth) {
         const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
@@ -687,7 +696,6 @@ async function boot() {
     // (non-cumulative) line per operator makes an overtake a literal
     // crossing of two lines.
     {
-      const singleMonth = months.length === 1;
       const shareBasisToggle = createSegmented({
         options: [{ key: "ggr", label: "GGR" }, { key: "turnover", label: "Turnover" }],
         selected: { value: state.operatorShareBasis },
@@ -854,6 +862,28 @@ async function boot() {
       if (selectedOps.length === 0) {
         Charts.emptyState(body, "Select up to 6 operators in “Compare operators” above to trace their trend here.");
         tableSlot.innerHTML = "";
+      } else if (singleMonth) {
+        // Same fix as Market trend/Operator share: a 1-point line is a
+        // zero-length path that renders nothing — this looked exactly like
+        // "the chart is empty" despite the data being right there. Falls
+        // back to a bar per operator for that one month instead.
+        let items;
+        if (state.metric === "share") {
+          const marketTotal = Agg.sum(filtered, "ggr");
+          items = Agg.operatorTrend(filtered, months, selectedOps, "ggr").map((s) => ({
+            operator: s.key,
+            segments: [{ key: "total", label: "Share", value: marketTotal ? (s.values[0] / marketTotal) * 100 : 0, colorClass: compareColorMap.get(s.key) }],
+          }));
+        } else {
+          items = Agg.operatorTrend(filtered, months, selectedOps, state.metric).map((s) => ({
+            operator: s.key,
+            segments: [{ key: "total", label: Charts.METRIC_LABEL[state.metric], value: s.values[0] || 0, colorClass: compareColorMap.get(s.key) }],
+          }));
+        }
+        items.sort((a, b) => b.segments[0].value - a.segments[0].value);
+        Charts.renderBarChart(body, tableSlot, {
+          items, metric: state.metric, categoryLabel: "Operator", chartLabel: `Compared operators — ${months[0].label}`,
+        });
       } else if (state.metric === "share") {
         const marketTotals = Agg.totalsByMonth(filtered, months, "ggr");
         const series = Agg.operatorTrend(filtered, months, selectedOps, "ggr").map((s) => ({
@@ -880,6 +910,12 @@ async function boot() {
       const selectedOps = [...state.operators];
       if (selectedOps.length === 0) {
         Charts.emptyState(body, "Select up to 6 operators above to see whether they're outgrowing or lagging the overall market.");
+        tableSlot.innerHTML = "";
+      } else if (singleMonth) {
+        // Indexed-to-100 is a trajectory over time by definition — with one
+        // month there's nothing to index against, so a bar-chart fallback
+        // (like the other cards) wouldn't mean anything here either.
+        Charts.emptyState(body, "Indexed growth needs more than one month to show a trajectory — pick a wider date range to compare growth here.");
         tableSlot.innerHTML = "";
       } else {
         // "Share" and "index" are both already relative — indexing a share

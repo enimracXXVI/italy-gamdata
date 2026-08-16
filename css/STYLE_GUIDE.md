@@ -136,7 +136,7 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-popover__footer-actions` | Groups "Select all" and "Clear" together on the footer's left side |
 | `.filter-popover__clear` | Shared class for both the "Select all" and "Clear" buttons in a multi-select popover footer (same look, so it wasn't worth a second class name) |
 | `.filter-popover__hint` | Muted helper text ("Up to 6") |
-| `.filter-preset-list` / `.filter-preset` | Date-range preset rows (All time, Last month, Last 3/6/12 months, YTD, Custom) — "Last month" is the single most recent month with data, not the current calendar month (which may have none yet) |
+| `.filter-preset-list` / `.filter-preset` | Date-range preset rows (All time, Last month, Last 3/6/12 months, YTD, Custom) — "Last month" is the single most recent month with data, not the current calendar month (which may have none yet), and is the default on first load and after Reset (a multi-year "All time" view isn't the useful thing to land on) |
 | `.filter-preset__check` | The ✓ mark, visible only on `.filter-preset--selected` |
 | `.filter-preset-custom` | Wraps the custom-range picker: a "From" row and a "To" row, stacked |
 | `.filter-date-pair-row` | One of those two rows: a small "From"/"To" label + a Month `<select>` + a Year `<select>` |
@@ -236,14 +236,20 @@ every deploy.
 | `.info-button-wrap` / `.info-button` / `.info-popover` | The "ⓘ" next to a chart title and its popover — `buildCardShell`'s `caption` text now lives here instead of as permanent on-card text, decluttering the default view. Opens on click/tap (works on touch) and on desktop hover; click always *opens* rather than toggles, since a toggle would fight the hover handler (a mouse click fires `mouseenter` before `click`, so a naive toggle would immediately re-close what hover just opened) |
 | `.table-toggle` / `--active` | The "View as table" / "View as chart" button on every card. `:hover` is scoped `:not(.table-toggle--active)` for the same reason as the segmented control |
 
-**Market trend and Operator share both fall back to a bar-chart breakdown
-when the date range narrows to a single month** (`js/app.js`, the
-`singleMonth` check at the top of each card's render block). A time-series
-chart with one point on the x-axis has nothing to show a trend of — it was
-this exact case that made both cards "useless" with a one-month filter
-applied. Market trend breaks down by vertical for that month; Operator share
-breaks down the same top-7-by-Online-Sportsbetting-GGR set it always uses.
-Both reuse `renderBarChart` (see §6) rather than a new chart type. Operator
+**Every trend-over-time card falls back to something else when the date
+range narrows to a single month** (`js/app.js`, one `singleMonth` const
+computed once near the top of `render()` and checked in each card's own
+block). A time-series chart with one point on the x-axis has nothing to
+show a trend of — worse, a single-point line is a real `<path>` with a
+zero-size bounding box (`M x,y`, no `L` segment), so it renders *nothing*
+rather than something obviously degenerate, which is exactly why this
+looked like "the chart is empty" rather than a scaling/design problem.
+Market trend, Operator share, and Compared-operators trend all switch to a
+`renderBarChart` breakdown for that one month instead (Market trend by
+vertical; Operator share and Compared-operators trend by whichever
+operators are in view). Compared-operators-vs-market can't take the same
+fallback — an indexed-to-100 trajectory has no single-month equivalent to
+fall back to — so it shows an explanatory empty state instead. Operator
 share's Stacked/Lines toggle is disabled (with a `title` explaining why) in
 this state, since neither mode means anything for a single data point.
 
