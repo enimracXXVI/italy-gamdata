@@ -651,57 +651,87 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
  * same --delta-good/--delta-bad pair the KPI tiles already use for exactly
  * this meaning — not a categorical hue — and every value carries its own
  * +/- sign as the required label pairing for a state color. */
+// Vertical, not horizontal: a horizontal diverging bar chart's height grows
+// with the item count (one row each), which for 15 operators pushed the
+// card past a full screen's height on its own, forcing a scroll through
+// this one card before reaching anything below it. Flipped 90°, item count
+// grows the *width* instead — capped visually by wrapping in a
+// horizontally-scrolling container (`.viz-scroll-x`), so the card's height
+// stays fixed regardless of how many categories it holds, and most category
+// counts (up to ~20 on a normal desktop width) need no scrolling at all.
 export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLabel, chartLabel, metric, previousLabel = "Previous", newLabel = "New" }) {
   clear(body);
   if (items.length === 0) {
     emptyState(body, "No data for the current filters.");
     return;
   }
-  const rowH = 26, gap = 8;
-  const marginL = 8, marginR = 64, marginT = 4, marginB = 4;
-  const maxLabelChars = 24;
+  const colW = 46, gap = 20;
+  const maxLabelChars = 22;
   const truncate = (s) => (s.length > maxLabelChars ? `${s.slice(0, maxLabelChars - 1)}…` : s);
+  // A rotated (-45deg), end-anchored label sweeps up-and-LEFT from its own
+  // tick by roughly textWidth/√2 in both the x and y directions — the same
+  // sweep amount governs two different clipping risks, so both margins
+  // below are sized off one shared estimate of the longest label present:
+  // marginL, since the first item has no preceding column to lend it
+  // leftward room the way every other item implicitly does; and marginB,
+  // since EVERY label's sweep also reaches that same distance *below* its
+  // anchor point, not just to the side, and the horizontal-scroll wrapper
+  // this chart sits in (`.viz-scroll-x`) can only scroll one axis — CSS
+  // computes an unset overflow-y as `auto` the moment overflow-x is
+  // anything but `visible`, so any part of a label that lands below a
+  // too-small marginB gets silently clipped rather than scrolled to.
   const longestLabel = Math.max(...items.map((it) => truncate(String(it.key ?? "")).length), 1);
-  const labelColW = Math.min(168, Math.max(40, Math.round(longestLabel * 6.3 + 16)));
-  const W = measureWidth(body);
-  const barAreaX0 = marginL + labelColW;
-  const barAreaW = Math.max(0, W - marginL - labelColW - marginR);
-  const centerX = barAreaX0 + barAreaW / 2;
-  const halfW = barAreaW / 2;
-  const H = marginT + marginB + items.length * (rowH + gap) - gap;
+  const labelSweep = Math.round(longestLabel * 6.5 * Math.SQRT1_2);
+  const marginL = 14 + labelSweep;
+  const marginR = 10, marginT = 26, marginB = 32 + labelSweep;
+  const plotH = 170;
+
+  const W = marginL + items.length * (colW + gap) - gap + marginR;
+  const H = marginT + plotH + marginB;
+  const baselineY = marginT + plotH / 2;
+  const halfH = plotH / 2;
+  const labelY = marginT + plotH + 24;
 
   const maxAbs = Math.max(...items.map((it) => Math.abs(it.value ?? 0)), 1);
-  const xScale = (v) => (Math.abs(v) / maxAbs) * halfW;
+  const yScale = (v) => (Math.abs(v) / maxAbs) * halfH;
 
-  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": chartLabel }, "viz-svg");
-  svg.appendChild(svgEl("line", { x1: centerX, x2: centerX, y1: marginT, y2: H - marginB }, "viz-baseline"));
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, width: W, role: "img", "aria-label": chartLabel }, "viz-svg viz-svg--growing");
+  svg.appendChild(svgEl("line", { x1: marginL, x2: W - marginR, y1: baselineY, y2: baselineY }, "viz-baseline"));
 
   items.forEach((it, i) => {
-    const y = marginT + i * (rowH + gap);
+    const x = marginL + i * (colW + gap);
+    const centerX = x + colW / 2;
 
-    const label = svgEl("text", { x: marginL, y: y + rowH / 2 + 4 }, "viz-bar-category-label");
+    // Rotated so long operator/vertical names don't collide with their
+    // neighbors in a narrow column — anchored at its own end so it reads
+    // diagonally back up toward the tick it belongs to, the standard
+    // technique for many categories packed along one axis.
+    const label = svgEl(
+      "text",
+      { x: centerX, y: labelY, transform: `rotate(-45, ${centerX}, ${labelY})` },
+      "viz-bar-category-label viz-bar-category-label--rotated"
+    );
     label.textContent = truncate(String(it.key ?? ""));
     svg.appendChild(label);
 
     const hasValue = typeof it.value === "number" && Number.isFinite(it.value);
     const positive = hasValue && it.value >= 0;
-    let valueX = centerX, anchor = "middle", valueText = "—", labelDirClass = "";
+    let valueY = baselineY, valueText = "—", labelDirClass = "";
     if (hasValue) {
-      const w = xScale(it.value);
-      if (w > 0) {
-        const rectAttrs = positive ? { x: centerX, y, width: w, height: rowH } : { x: centerX - w, y, width: w, height: rowH };
+      const h = yScale(it.value);
+      if (h > 0) {
+        const rectAttrs = positive ? { x, y: baselineY - h, width: colW, height: h } : { x, y: baselineY, width: colW, height: h };
         svg.appendChild(svgEl("rect", rectAttrs, `viz-diverging-bar ${positive ? "viz-diverging-bar--pos" : "viz-diverging-bar--neg"}`));
       }
-      valueX = positive ? centerX + w + 8 : centerX - w - 8;
-      anchor = positive ? "start" : "end";
+      valueY = positive ? baselineY - h - 8 : baselineY + h + 16;
       valueText = `${positive ? "+" : ""}${it.value.toFixed(1)}%`;
       labelDirClass = positive ? "viz-bar-label--good" : "viz-bar-label--bad";
     }
-    const valueLabel = svgEl("text", { x: valueX, y: y + rowH / 2 + 4, "text-anchor": anchor }, `viz-bar-label ${labelDirClass}`);
+    const valueLabel = svgEl("text", { x: centerX, y: valueY, "text-anchor": "middle" }, `viz-bar-label ${labelDirClass}`);
     valueLabel.textContent = valueText;
     svg.appendChild(valueLabel);
 
-    const hitArea = svgEl("rect", { x: marginL, y, width: Math.max(0, W - marginL - marginR), height: rowH }, "viz-hit-rect");
+    const hitArea = svgEl("rect", { x, y: marginT, width: colW, height: plotH }, "viz-hit-rect");
     svg.appendChild(hitArea);
     const tooltipRows = metric
       ? [
@@ -716,7 +746,10 @@ export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLab
     hitArea.addEventListener("pointerleave", hideTooltip);
   });
 
-  body.appendChild(svg);
+  const scrollWrap = document.createElement("div");
+  scrollWrap.className = "viz-scroll-x";
+  scrollWrap.appendChild(svg);
+  body.appendChild(scrollWrap);
 
   clear(tableSlot);
   tableSlot.appendChild(buildTable({

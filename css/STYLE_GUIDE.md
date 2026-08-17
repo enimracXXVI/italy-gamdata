@@ -48,7 +48,7 @@ setting was just a second thing to get out of sync with the other).
 | `--grid-line` | `#e1e0d9` | `#2c2c2a` | Horizontal gridlines inside charts |
 | `--axis-line` | `#c3c2b7` | `#383835` | Chart axis lines + the dashed hover crosshair |
 | `--focus-ring` | `#2a78d6` | `#3987e5` | `:focus-visible` outline on interactive controls |
-| `--delta-good` | `#006300` | `#0ca30c` | KPI tile up-arrow text (metric improved); also the Growth-by-vertical/-channel diverging bars' positive fill + value-label ink (`.viz-diverging-bar--pos`, `.viz-bar-label--good`) — same meaning (growing vs. shrinking), so the same token, not a fresh diverging pair |
+| `--delta-good` | `#006300` | `#0ca30c` | KPI tile up-arrow text (metric improved); also the Growth-by-operator/-vertical/-channel diverging bars' positive fill + value-label ink (`.viz-diverging-bar--pos`, `.viz-bar-label--good`) — same meaning (growing vs. shrinking), so the same token, not a fresh diverging pair |
 | `--delta-bad` | `#d03b3b` | `#d03b3b` | KPI tile down-arrow text (metric worsened); also the negative-growth counterpart of the above (`.viz-diverging-bar--neg`, `.viz-bar-label--bad`) |
 | `--status-good/warning/serious/critical` | see file | see file | Reserved status scale — `--status-warning` backs the data-quality warning banner; the rest are available for future alerting |
 | `--series-1`…`--series-8` | palette hues | palette hues | Categorical identity (verticals, operators, groups) — see §7 |
@@ -217,9 +217,19 @@ every deploy.
 | `.stat-tile` | One card (Total GGR, Total Turnover, …) |
 | `.stat-tile__label` | Small uppercase label |
 | `.stat-tile__value` | The big number |
-| `.stat-tile__delta` + `--good` / `--bad` / `--flat` | The "▲ 6.6% vs prior month" line; color depends on direction |
-| `.stat-tile__delta-caption` | The muted trailing text in that line ("vs prior month") |
+| `.stat-tile__delta` + `--good` / `--bad` / `--flat` | The "▲ 6.6% YoY" line; color depends on direction |
+| `.stat-tile__delta-caption` | The muted trailing text in that line ("YoY") |
 | `.delta-glyph-up` / `-down` / `-flat` | Adds the ▲ / ▼ / — character via `::before` (kept out of `textContent` so screen readers get the number, not a glyph-only cue) |
+
+All three tiles' delta is **YoY, not MoM** — betting volume is seasonal
+(a big-tournament month against an ordinary one either side of it), so a
+MoM delta conflates "did the business grow" with "is it just that time of
+year again" in a way a reader can't untangle from the number alone; YoY
+cancels that out by construction. There used to be a fourth tile, "Year
+over year (GGR)," holding the only YoY figure on the row while the other
+three showed MoM — once every tile's delta became YoY, that tile was just
+duplicating what "Total GGR"'s own delta already said, so it was removed
+rather than kept as a redundant fourth number.
 
 ---
 
@@ -295,6 +305,22 @@ calendar month directly via `allMonths`/`records`, the same way
 "latest" side still respects the date range, only the comparison anchor
 doesn't.
 
+A separate, much bigger bug lived one layer below all of this:
+`Agg.filterRecords` (`js/aggregate.js`) destructured `dateFrom`/`dateTo` off
+the `state` object it was handed, but `state`'s actual fields have always
+been named `from`/`to` — so those two variables were `undefined` on every
+call, the `if (dateFrom && …)` guards never fired, and `filtered` (used for
+the KPI totals, the Operator leaderboard, and the Growth-by-operator "top
+15" ranking) silently included every record in the dataset regardless of
+the selected date range. Any chart that separately re-filters to an exact
+month key (`totalsByMonth`, `monthlySeries`, `operatorTrend` — anything
+that also takes a `months` array) was unaffected, since that per-month
+lookup happens to correct for it; anything computed as a single
+`Agg.sum`/`Agg.leaderboard`/`Agg.topKeysByTotal` straight off `filtered`
+was not. Fixed by matching the destructured names to `state`'s actual
+field names. There's exactly one caller, so there was no wider contract to
+preserve.
+
 ---
 
 ## 6. SVG chart internals (`js/charts.js`)
@@ -306,6 +332,8 @@ and scales via CSS width, so one code path serves desktop and mobile.
 |---|---|
 | `.viz-svg` | The `<svg>` root for line/bar charts. Its `viewBox` width is set in JS to the card's *measured* pixel width (`measureWidth()` in `charts.js`) rather than a fixed constant — that's what keeps font/stroke sizes visually consistent whether the chart sits in a 1-column or 2-column card |
 | `.viz-svg--fixed` | Added alongside `.viz-svg` on heatmap panels only — keeps their natural cell size instead of stretching to fill a wide card |
+| `.viz-svg--growing` | Added alongside `.viz-svg` on `renderDivergingBarChart`'s chart (Growth by operator/vertical/channel) — unlike `--fixed`, no `max-width` cap: this SVG is *meant* to exceed its card's width once it has enough categories, growing wider rather than compressing, and scrolling within `.viz-scroll-x` (below) rather than shrinking every column to fit |
+| `.viz-scroll-x` | Horizontal-scroll wrapper around a `--growing` SVG, same idea as `.viz-table-wrap` below but for a chart instead of a table |
 | `.viz-gridline` | Horizontal gridlines |
 | `.viz-axis-line` | The solid x/y axis lines |
 | `.viz-axis-label` + `--x` / `--y` | Tick labels. X-axis labels use evenly-spaced indices (`evenlySpacedIndices()`), never a modulo step, so the last label never crowds the one before it |
@@ -321,12 +349,47 @@ and scales via CSS width, so one code path serves desktop and mobile.
 | `.viz-bar--dim` | Applied to a bar/area/label when its legend entry is toggled off, or (leaderboard split modes only) to every row whose operator isn't in the "Compare operators" set — segment colors there are fixed to channel/vertical identity, not operator identity, so dimming the whole row is how those modes show emphasis instead |
 | `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) — optionally followed by `(N%)` when an item carries a `note` (e.g. the single-month Market trend breakdown adds each vertical's % of the total alongside its € figure). `renderBarChart` widens its own right margin (`marginR`, 64px → 130px) whenever any item has a `note`, since the longer combined text overflowed past the card's own edge at the old margin — the SVG doesn't clip content by default |
 | `.viz-bar-category-label` | The row's category name to the left of a bar — an operator name for the Operator leaderboard, but `renderBarChart` (`js/charts.js`) is generic: any caller can hand it `{ operator: <any label>, segments }` rows and pass `categoryLabel`/`chartLabel` to relabel the axis/table/aria-text for what those rows actually are. Left-aligned (`text-anchor: start`) at the card's left edge, not right-aligned against the bar — a right-aligned shared column left a dead gap before any label shorter than the longest one in the set (e.g. "Casino" next to "Horse Racing Fixed Odds"); left-aligned, that same slack falls after the label instead, reading as normal column spacing rather than a gap. Its column width (`labelColW`) is still sized to the longest label actually present (capped at the same width the old fixed constant used), so the bars all still start at one consistent x regardless of alignment |
-| `.viz-diverging-bar` + `--pos` / `--neg` | Bars in `renderDivergingBarChart` (Growth by operator/vertical/channel, `js/charts.js`) — grow left/right from a center 0% line instead of from a shared left edge. `--pos`/`--neg` carry `--delta-good`/`--delta-bad`, not a categorical hue: growth direction is a *state* (growing vs. shrinking), and the dataviz color rule for a series that means good/bad is "wears status/delta tokens, never categorical," so it reuses the exact pair the KPI tiles already use for the same meaning rather than a fresh diverging pair. When a `metric` is passed, its tooltip and table also carry the two raw values behind the %, not just the delta — "Prior month"/"Same month last year" and "New" — formatted with `formatMetric`; the accessible table gains two columns for the same reason the single-month bar chart's `note` does (below): the % alone doesn't tell you whether it moved from a large base or a tiny one |
+| `.viz-diverging-bar` + `--pos` / `--neg` | Bars in `renderDivergingBarChart` (Growth by operator/vertical/channel, `js/charts.js`) — grow up/down from a center 0% baseline instead of from a shared floor. `--pos`/`--neg` carry `--delta-good`/`--delta-bad`, not a categorical hue: growth direction is a *state* (growing vs. shrinking), and the dataviz color rule for a series that means good/bad is "wears status/delta tokens, never categorical," so it reuses the exact pair the KPI tiles already use for the same meaning rather than a fresh diverging pair. When a `metric` is passed, its tooltip and table also carry the two raw values behind the %, not just the delta — "Prior month"/"Curr. month" (MoM) or "Prev. year"/"Curr. year" (YoY) — formatted with `formatMetric`; the accessible table gains two columns for the same reason the single-month bar chart's `note` does (below): the % alone doesn't tell you whether it moved from a large base or a tiny one |
+| `.viz-bar-category-label--rotated` | Modifier alongside the base `.viz-bar-category-label` class for `renderDivergingBarChart`'s x-axis labels specifically — `text-anchor: end` instead of the base class's `start`, since each label is rotated -45deg (via a per-element `transform` attribute set in JS, not CSS, since the pivot point differs per label) and needs to read back toward its own tick rather than forward past it |
 | `.viz-bar-label--good` / `--bad` | Growth-chart value-label ink, same `--delta-good`/`--delta-bad` pair as the bars — every value also carries its own `+`/`-` sign, which is the required label pairing for a state/status color (never color alone) |
 | `.viz-cell` | One heatmap cell (vertical × channel) |
 | `.viz-cell-label` | The value text inside a cell |
 | `.viz-heatmap-row-label` / `-col-label` | Row (vertical) / column (channel) headers on a heatmap |
 | `.cell-ink-light` / `.cell-ink-dark` | Chooses white vs. dark text inside a heatmap cell so it stays readable against that cell's fill (picked per-cell in `charts.js` from the cell's `seq-*` step). Both are **fixed hex, not theme tokens** — `cell-ink-dark` used to read `var(--text-primary)`, which is white in dark mode, so on a pale cell both "dark ink" and "light ink" rendered white-on-white; it's hardcoded to `#0b0b0b` now |
+
+**`renderDivergingBarChart` is vertical, not horizontal** — categories along
+the bottom, bars growing up/down from a center baseline, the opposite of
+every other bar chart on the dashboard. It used to be horizontal (one row
+per category), which meant its *height* grew with item count; at 15
+operators that pushed the card past a full screen's height on its own,
+forcing a scroll through this one card before reaching anything below it.
+Flipped 90°, item count grows the SVG's *width* instead, which is bounded
+by wrapping it in `.viz-scroll-x` — the card's height stays fixed
+regardless of category count, and most realistic counts (up to ~20 on a
+normal desktop width) need no scrolling at all.
+
+Each category label is rotated -45deg so long names (an operator, or
+"Horse Racing Fixed Odds") don't collide with their neighbors in a narrow
+column — the standard technique for many categories packed along one
+axis. That rotation is the source of a layout gotcha worth knowing before
+touching this function's margins: an end-anchored, -45deg label doesn't
+just project *left* of its own tick (the reason `marginL` scales with the
+longest label present, so the first item never clips against the chart's
+own left edge) — it projects *down* by the same amount too, since a 45°
+sweep moves equally in both directions. `marginB` has to account for that
+downward sweep as well, and for a chart wrapped in a horizontal-only
+scroller this matters more than it would look like it should: CSS
+computes an unset `overflow-y` as `auto` the instant `overflow-x` is
+anything but `visible` (there's no way to declare one axis auto and the
+other visible — the "visible" side just silently becomes `auto` too), so
+`.viz-scroll-x` clips vertically even though only `overflow-x` was ever
+set on it. A `marginB` sized for the *average* label let the longest one's
+downward sweep get clipped by that implicit vertical clip — not
+truncated, not omitted from the DOM, just invisible past a certain point,
+which reads exactly like a text-cutoff bug rather than a margin one.
+Fixed by sizing both `marginL` and `marginB` off the same estimate
+(`longestLabel * charWidth / √2`), rather than a flat constant tuned for
+whatever label set happened to be on screen during testing.
 
 ---
 

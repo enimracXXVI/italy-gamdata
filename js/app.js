@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608171504";
-import * as Agg from "./aggregate.js?v=202608171504";
-import * as Charts from "./charts.js?v=202608171504";
-import * as Quality from "./quality.js?v=202608171504";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171504";
+} from "./data.js?v=202608171716";
+import * as Agg from "./aggregate.js?v=202608171716";
+import * as Charts from "./charts.js?v=202608171716";
+import * as Quality from "./quality.js?v=202608171716";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171716";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -578,9 +578,6 @@ async function boot() {
     const pct = latest !== null && prev ? ((latest - prev) / Math.abs(prev)) * 100 : null;
     return { prev, latest, pct };
   }
-  function momPercent(months, metric, momScope = defaultGrowthScope, totalScope = momScope) {
-    return momValues(months, metric, momScope, totalScope).pct;
-  }
   // `yoyScope`/`totalScope`: see momValues above — same pattern, just
   // comparing against the same calendar month one year back instead of the
   // preceding month.
@@ -599,20 +596,23 @@ async function boot() {
     return yoyValues(months, metric, yoyScope, totalScope).pct;
   }
 
+  // YoY, not MoM — betting volume is heavily seasonal (e.g. a big
+  // tournament month vs. the month before it), so a month-over-month delta
+  // mixes "did the business actually grow" with "is it just that time of
+  // year again" in a way a reader can't untangle. Comparing against the
+  // same month last year cancels that out. There's no separate standalone
+  // YoY tile anymore for the same reason there's no separate MoM one now —
+  // it's just what every tile's delta means.
   function renderKPIs(filtered, months) {
     kpiRow.innerHTML = "";
 
     const totalGGR = Agg.sum(filtered, "ggr");
     const totalTurnover = Agg.sum(filtered, "turnover");
     const overallMargin = Agg.sum(filtered, "hold");
-    // Always GGR-based regardless of the metric toggle — "share" and "index"
-    // aren't quantities you can take a year-over-year delta of the same way.
-    const yoyPct = yoyPercent(months, "ggr");
 
-    addTile("Total GGR", Charts.formatMetric(totalGGR, "ggr"), momPercent(months, "ggr"), "MoM", true);
-    addTile("Total Turnover", Charts.formatMetric(totalTurnover, "turnover"), momPercent(months, "turnover"), "MoM", true);
-    addTile("Overall margin", Charts.formatMetric(overallMargin, "hold"), momPercent(months, "hold"), "MoM", true);
-    addTile("Year over year (GGR)", yoyPct === null ? "—" : `${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%`, yoyPct, "vs same month last year", true);
+    addTile("Total GGR", Charts.formatMetric(totalGGR, "ggr"), yoyPercent(months, "ggr"), "YoY", true);
+    addTile("Total Turnover", Charts.formatMetric(totalTurnover, "turnover"), yoyPercent(months, "turnover"), "YoY", true);
+    addTile("Overall margin", Charts.formatMetric(overallMargin, "hold"), yoyPercent(months, "hold"), "YoY", true);
   }
 
   function addTile(label, value, deltaPct, deltaCaption, showDelta) {
@@ -708,7 +708,9 @@ async function boot() {
       });
       Charts.renderDivergingBarChart(body, tableSlot, {
         items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by operator (${growthPeriodLabel})`,
-        metric: state.metric, previousLabel: isYoy ? "Same month last year" : "Prior month",
+        metric: state.metric,
+        previousLabel: isYoy ? "Prev. year" : "Prior month",
+        newLabel: isYoy ? "Curr. year" : "Curr. month",
       });
     }
 
@@ -727,7 +729,9 @@ async function boot() {
       });
       Charts.renderDivergingBarChart(body, tableSlot, {
         items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by vertical (${growthPeriodLabel})`,
-        metric: state.metric, previousLabel: isYoy ? "Same month last year" : "Prior month",
+        metric: state.metric,
+        previousLabel: isYoy ? "Prev. year" : "Prior month",
+        newLabel: isYoy ? "Curr. year" : "Curr. month",
       });
     }
 
@@ -746,7 +750,9 @@ async function boot() {
       });
       Charts.renderDivergingBarChart(body, tableSlot, {
         items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by channel (${growthPeriodLabel})`,
-        metric: state.metric, previousLabel: isYoy ? "Same month last year" : "Prior month",
+        metric: state.metric,
+        previousLabel: isYoy ? "Prev. year" : "Prior month",
+        newLabel: isYoy ? "Curr. year" : "Curr. month",
       });
     }
 

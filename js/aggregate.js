@@ -6,10 +6,10 @@
 // than a magic "no filter" — the two multi-selects stay honest about what's
 // on screen.
 export function filterRecords(records, state) {
-  const { dateFrom, dateTo, verticals, channels } = state;
+  const { from, to, verticals, channels } = state;
   return records.filter((r) => {
-    if (dateFrom && r.key < dateFrom) return false;
-    if (dateTo && r.key > dateTo) return false;
+    if (from && r.key < from) return false;
+    if (to && r.key > to) return false;
     if (!verticals.has(r.vertical)) return false;
     if (!channels.has(r.channel)) return false;
     return true;

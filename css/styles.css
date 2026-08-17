@@ -772,6 +772,11 @@ button { font-family: inherit; }
    -------------------------------------------------------------------------- */
 .viz-svg { width: 100%; height: auto; display: block; overflow: visible; }
 .viz-svg--fixed { width: auto; max-width: 100%; }
+/* Unlike --fixed, no max-width cap — this SVG is meant to exceed its
+   container's width once it has enough categories, and scroll within
+   `.viz-scroll-x` rather than compress. */
+.viz-svg--growing { width: auto; }
+.viz-scroll-x { overflow-x: auto; }
 
 .viz-gridline { stroke: var(--grid-line); stroke-width: 1; shape-rendering: crispEdges; }
 .viz-axis-line { stroke: var(--axis-line); stroke-width: 1; shape-rendering: crispEdges; }
@@ -823,6 +828,10 @@ button { font-family: inherit; }
   fill: var(--text-primary);
   text-anchor: start;
 }
+/* Growth chart's x-axis category labels: rotated -45deg in JS (per-label
+   transform, since each one pivots around its own tick position), so they
+   read start-to-end anchored at the tick rather than left-aligned past it. */
+.viz-bar-category-label--rotated { text-anchor: end; }
 
 .viz-diverging-bar--pos { fill: var(--delta-good); }
 .viz-diverging-bar--neg { fill: var(--delta-bad); }
