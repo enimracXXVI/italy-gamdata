@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608171716";
-import * as Agg from "./aggregate.js?v=202608171716";
-import * as Charts from "./charts.js?v=202608171716";
-import * as Quality from "./quality.js?v=202608171716";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171716";
+} from "./data.js?v=202608171753";
+import * as Agg from "./aggregate.js?v=202608171753";
+import * as Charts from "./charts.js?v=202608171753";
+import * as Quality from "./quality.js?v=202608171753";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171753";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -196,7 +196,7 @@ function buildQualitySection(checks, title, subtitle, items, columns, keyFn, row
   caption.className = "chart-card__caption";
   const shown = items.slice(0, QUALITY_TABLE_CAP);
   caption.textContent = `${activeCount} active${dismissedCount > 0 ? `, ${dismissedCount} marked not-an-issue` : ""}`
-    + (items.length > QUALITY_TABLE_CAP ? ` — showing the first ${QUALITY_TABLE_CAP} of ${items.length}.` : ".");
+    + (items.length > QUALITY_TABLE_CAP ? `. Showing the first ${QUALITY_TABLE_CAP} of ${items.length}.` : ".");
   card.appendChild(caption);
 
   const wrap = document.createElement("div");
@@ -274,7 +274,7 @@ function renderQualityTab(checks) {
   root.appendChild(buildQualitySection(
     checks,
     "Duplicate rows",
-    "Same month + operator + vertical + channel entered more than once — the most common copy/paste slip, and it silently inflates totals for that period in every chart on the Dashboard tab.",
+    "Same month, operator, vertical, and channel entered more than once. The most common copy/paste mistake, and it quietly inflates totals for that period on every Dashboard chart.",
     checks.duplicates,
     ["Month", "Operator", "Vertical", "Channel", "×", "GGR / Turnover per occurrence"],
     (g) => `dup:${g.monthKey}:${g.operator}:${g.vertical}:${g.channel}`,
@@ -287,7 +287,7 @@ function renderQualityTab(checks) {
   root.appendChild(buildQualitySection(
     checks,
     "Extreme margins",
-    "GGR ÷ Turnover that's implausible for its direction: negative (players ahead) only flagged once Turnover is over €1M and the loss is -50% or worse, so an ordinary bad month doesn't drown out real typos; positive only flagged above 100% (GGR bigger than Turnover), which shouldn't happen at all.",
+    "GGR divided by Turnover that doesn't make sense for its direction. A negative margin is only flagged once Turnover is over €1M and the loss is 50% or worse, so an ordinary bad month doesn't bury real typos. A positive margin is only flagged above 100% (GGR bigger than Turnover), which shouldn't happen at all.",
     checks.extremeMargins,
     ["Month", "Operator", "Vertical", "Channel", "GGR", "Turnover", "Margin"],
     (r) => `margin:${r.monthKey}:${r.operator}:${r.vertical}:${r.channel}`,
@@ -297,7 +297,7 @@ function renderQualityTab(checks) {
   root.appendChild(buildQualitySection(
     checks,
     "Blank Turnover with non-zero GGR",
-    "Not necessarily wrong — some operators genuinely don't report turnover for a channel — but it breaks margin math for that row, so worth a glance.",
+    "Not necessarily wrong. Some operators genuinely don't report turnover for a channel, but it breaks margin math for that row, so it's worth a glance.",
     checks.blankTurnovers,
     ["Month", "Operator", "Vertical", "Channel", "GGR"],
     (r) => `blank:${r.monthKey}:${r.operator}:${r.vertical}:${r.channel}`,
@@ -307,7 +307,7 @@ function renderQualityTab(checks) {
   root.appendChild(buildQualitySection(
     checks,
     "Operator → Group naming inconsistencies",
-    "Splits one group's totals across two labels in the Operator group's rollups. Could be spelling drift (e.g. a dropped “S.R.L.”) or a genuine ownership change — worth a look either way.",
+    "Splits one group's totals across two labels in the Operator group rollups. Could be spelling drift (like a dropped “S.R.L.”) or a real ownership change. Worth a look either way.",
     checks.groupInconsistencies,
     ["Operator", "Group names seen"],
     (g) => `group:${g.operator}`,
@@ -317,7 +317,7 @@ function renderQualityTab(checks) {
   root.appendChild(buildQualitySection(
     checks,
     "Missing months in a regular run",
-    "An operator/vertical/channel that's reported in 95%+ of the months between its own first and last appearance, but skipped one in the middle — as opposed to a combo that simply hasn't launched yet or has permanently stopped, neither of which is an error. August/September 2022 don't count against anyone: ADM's own reporting had a market-wide gap those two months.",
+    "An operator, vertical, and channel combo that's reported in 95%+ of the months between its own first and last appearance, but skipped one in the middle. That's different from a combo that simply hasn't launched yet or has stopped for good, since neither of those is an error. August and September 2022 don't count against anyone, since ADM's own reporting had a market-wide gap those two months.",
     checks.presenceGaps,
     ["Operator", "Vertical", "Channel", "Presence", "Missing months"],
     (g) => `gap:${g.operator}:${g.vertical}:${g.channel}`,
@@ -369,19 +369,21 @@ async function boot() {
   const VALID_LEADERBOARD_MODES = new Set(["total", "channel", "vertical"]);
   const VALID_SHARE_VIEWS = new Set(["stacked", "lines"]);
   const VALID_GROWTH_PERIODS = new Set(["mom", "yoy"]);
+  const VALID_GROWTH_OPERATOR_MODES = new Set(["top10", "select"]);
 
   const urlParams = new URLSearchParams(window.location.search);
   const urlFrom = urlParams.get("from");
   const urlTo = urlParams.get("to");
   const urlVerticals = urlParams.getAll("v").filter((v) => verticalOrder.includes(v));
   const urlChannels = urlParams.getAll("ch").filter((c) => channelOrder.includes(c));
-  const urlOperators = urlParams.getAll("op").filter((o) => operatorNameSet.has(o)).slice(0, 6);
+  const urlOperators = urlParams.getAll("op").filter((o) => operatorNameSet.has(o));
   const urlMetric = urlParams.get("metric");
   const urlBasis = urlParams.get("basis");
   const urlLeaderboardMode = urlParams.get("lb");
   const urlShareView = urlParams.get("shareview");
   const urlVerticalTrendView = urlParams.get("vtv");
   const urlGrowthPeriod = urlParams.get("gp");
+  const urlGrowthOperatorMode = urlParams.get("gom");
   const urlTab = urlParams.get("tab");
 
   const state = {
@@ -402,6 +404,9 @@ async function boot() {
     // supposedly-synced toggles would just be three places to click instead
     // of one, for no real benefit.
     growthPeriod: urlGrowthPeriod && VALID_GROWTH_PERIODS.has(urlGrowthPeriod) ? urlGrowthPeriod : "mom",
+    // "top10" auto-ranks by the current filters + metric; "select" shows
+    // exactly the operators picked in the Operators filter instead.
+    growthOperatorMode: urlGrowthOperatorMode && VALID_GROWTH_OPERATOR_MODES.has(urlGrowthOperatorMode) ? urlGrowthOperatorMode : "top10",
   };
   if (state.from > state.to) { state.from = allMonths[allMonths.length - 1].key; state.to = allMonths[allMonths.length - 1].key; }
 
@@ -426,6 +431,7 @@ async function boot() {
     if (state.verticalTrendView !== "stacked") params.set("vtv", state.verticalTrendView);
     if (state.leaderboardMode !== "total") params.set("lb", state.leaderboardMode);
     if (state.growthPeriod !== "mom") params.set("gp", state.growthPeriod);
+    if (state.growthOperatorMode !== "top10") params.set("gom", state.growthOperatorMode);
     if (activeTab !== "dashboard") params.set("tab", activeTab);
     const qs = params.toString();
     window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
@@ -495,10 +501,9 @@ async function boot() {
     });
 
     operatorSelect = createMultiSelect({
-      label: "Compare operators",
+      label: "Operators",
       options: rankedOperatorOptions(),
       selected: state.operators,
-      max: 6,
       onChange: () => render(),
     });
 
@@ -525,6 +530,7 @@ async function boot() {
       state.verticalTrendView = "stacked";
       state.leaderboardMode = "total";
       state.growthPeriod = "mom";
+      state.growthOperatorMode = "top10";
       buildFilterBar();
       render();
     });
@@ -692,68 +698,104 @@ async function boot() {
     }
 
     {
-      const { body, tableSlot } = Charts.buildCardShell(cards.growthOperator, {
-        title: "Growth by operator",
-        caption: `Top 15 operators by GGR in the current filters — each one's ${Charts.METRIC_LABEL[state.metric]} ${growthComparisonPhrase}, within the selected vertical(s) & channel(s), ignoring the date range above.`,
-        extra: growthPeriodToggle().el,
+      // "Top 10" auto-ranks by the current filters and metric — same
+      // convention as the Operator leaderboard further down. "Select" shows
+      // exactly the operators picked in the Operators filter, in whatever
+      // order they were picked, so someone comparing a specific handful
+      // isn't stuck reading whoever the market happens to rank highest.
+      const modeToggle = createSegmented({
+        options: [{ key: "top10", label: "Top 10" }, { key: "select", label: "Select" }],
+        selected: { value: state.growthOperatorMode },
+        onChange: (key) => { state.growthOperatorMode = key; render(); },
       });
-      const rankMetric = state.metric === "share" ? "ggr" : state.metric;
-      const topOps = Agg.topKeysByTotal(filtered, "operator", rankMetric, 15);
-      const items = topOps.map((op) => {
+      const isSelectMode = state.growthOperatorMode === "select";
+      const opList = isSelectMode
+        ? [...state.operators]
+        : Agg.topKeysByTotal(filtered, "operator", state.metric === "share" ? "ggr" : state.metric, 10);
+      const items = opList.map((op) => {
         const scope = (r) => r.operator === op && state.verticals.has(r.vertical) && state.channels.has(r.channel);
         const { prev, latest, pct } = isYoy
           ? yoyValues(months, state.metric, scope, defaultGrowthScope)
           : momValues(months, state.metric, scope, defaultGrowthScope);
         return { key: op, value: pct, prev, latest };
       });
-      Charts.renderDivergingBarChart(body, tableSlot, {
-        items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by operator (${growthPeriodLabel})`,
-        metric: state.metric,
-        previousLabel: isYoy ? "Prev. year" : "Prior month",
-        newLabel: isYoy ? "Curr. year" : "Curr. month",
+      const { body, tableSlot } = Charts.buildCardShell(cards.growthOperator, {
+        title: "Growth by operator",
+        caption: isSelectMode
+          ? `Each picked operator's ${Charts.METRIC_LABEL[state.metric]} ${growthComparisonPhrase}, within the selected vertical(s) and channel(s).`
+          : `Top 10 operators by GGR in the current filters. Each one's ${Charts.METRIC_LABEL[state.metric]} ${growthComparisonPhrase}, within the selected vertical(s) and channel(s).`,
+        extra: [modeToggle.el, growthPeriodToggle().el],
       });
+      if (isSelectMode && items.length === 0) {
+        Charts.emptyState(body, "Pick operators above to see their growth here.");
+        tableSlot.innerHTML = "";
+      } else {
+        Charts.renderDivergingBarChart(body, tableSlot, {
+          items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by operator (${growthPeriodLabel})`,
+          metric: state.metric,
+          previousLabel: isYoy ? "Prev. year" : "Prior month",
+          newLabel: isYoy ? "Curr. year" : "Curr. month",
+        });
+      }
     }
 
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.growthVertical, {
         title: "Growth by vertical",
-        caption: `Each vertical's ${Charts.METRIC_LABEL[state.metric]} ${growthComparisonPhrase}, within the selected channel(s) — ignores the date range above (the comparison always needs the actual prior period, which usually isn't itself in a narrow range).`,
+        caption: `Each vertical's ${Charts.METRIC_LABEL[state.metric]} ${growthComparisonPhrase}, within the selected channel(s). This ignores the date range above, since the comparison always needs the actual prior period, which usually isn't in a narrow range.`,
         extra: growthPeriodToggle().el,
       });
-      const items = verticalOrder.filter((v) => state.verticals.has(v)).map((v) => {
-        const scope = (r) => r.vertical === v && state.channels.has(r.channel);
-        const { prev, latest, pct } = isYoy
-          ? yoyValues(months, state.metric, scope, defaultGrowthScope)
-          : momValues(months, state.metric, scope, defaultGrowthScope);
-        return { key: v, value: pct, prev, latest };
-      });
-      Charts.renderDivergingBarChart(body, tableSlot, {
-        items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by vertical (${growthPeriodLabel})`,
-        metric: state.metric,
-        previousLabel: isYoy ? "Prev. year" : "Prior month",
-        newLabel: isYoy ? "Curr. year" : "Curr. month",
-      });
+      // A vertical's "share" is its GGR as a percent of the total across
+      // the verticals currently selected — with only one vertical selected,
+      // that total IS the vertical, so its share is always 100% and never
+      // moves. Rather than plot a flat, always-0% chart that looks broken,
+      // say why there's nothing to plot.
+      if (state.metric === "share" && state.verticals.size === 1) {
+        Charts.emptyState(body, "Share needs more than one vertical selected. With just one, it's always 100%.");
+        tableSlot.innerHTML = "";
+      } else {
+        const items = verticalOrder.filter((v) => state.verticals.has(v)).map((v) => {
+          const scope = (r) => r.vertical === v && state.channels.has(r.channel);
+          const { prev, latest, pct } = isYoy
+            ? yoyValues(months, state.metric, scope, defaultGrowthScope)
+            : momValues(months, state.metric, scope, defaultGrowthScope);
+          return { key: v, value: pct, prev, latest };
+        });
+        Charts.renderDivergingBarChart(body, tableSlot, {
+          items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by vertical (${growthPeriodLabel})`,
+          metric: state.metric,
+          previousLabel: isYoy ? "Prev. year" : "Prior month",
+          newLabel: isYoy ? "Curr. year" : "Curr. month",
+        });
+      }
     }
 
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.growthChannel, {
         title: "Growth by channel",
-        caption: `Online vs. Retail ${Charts.METRIC_LABEL[state.metric]} ${growthComparisonPhrase}, within the selected vertical(s) — also ignores the date range above, for the same reason.`,
+        caption: `Online vs. Retail ${Charts.METRIC_LABEL[state.metric]} ${growthComparisonPhrase}, within the selected vertical(s). Also ignores the date range above, for the same reason.`,
         extra: growthPeriodToggle().el,
       });
-      const items = channelOrder.filter((c) => state.channels.has(c)).map((c) => {
-        const scope = (r) => r.channel === c && state.verticals.has(r.vertical);
-        const { prev, latest, pct } = isYoy
-          ? yoyValues(months, state.metric, scope, defaultGrowthScope)
-          : momValues(months, state.metric, scope, defaultGrowthScope);
-        return { key: c, value: pct, prev, latest };
-      });
-      Charts.renderDivergingBarChart(body, tableSlot, {
-        items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by channel (${growthPeriodLabel})`,
-        metric: state.metric,
-        previousLabel: isYoy ? "Prev. year" : "Prior month",
-        newLabel: isYoy ? "Curr. year" : "Curr. month",
-      });
+      // Same reasoning as Growth by vertical, above: one channel selected
+      // means its share of the total is always 100%.
+      if (state.metric === "share" && state.channels.size === 1) {
+        Charts.emptyState(body, "Share needs both channels selected. With just one, it's always 100%.");
+        tableSlot.innerHTML = "";
+      } else {
+        const items = channelOrder.filter((c) => state.channels.has(c)).map((c) => {
+          const scope = (r) => r.channel === c && state.verticals.has(r.vertical);
+          const { prev, latest, pct } = isYoy
+            ? yoyValues(months, state.metric, scope, defaultGrowthScope)
+            : momValues(months, state.metric, scope, defaultGrowthScope);
+          return { key: c, value: pct, prev, latest };
+        });
+        Charts.renderDivergingBarChart(body, tableSlot, {
+          items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by channel (${growthPeriodLabel})`,
+          metric: state.metric,
+          previousLabel: isYoy ? "Prev. year" : "Prior month",
+          newLabel: isYoy ? "Curr. year" : "Curr. month",
+        });
+      }
     }
 
     // --- Market overview: trend by vertical -------------------------------
@@ -770,7 +812,7 @@ async function boot() {
       if (singleMonth) {
         const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
           title: "Market trend",
-          caption: `Only one month is selected, so there's no trend to draw — this is the per-vertical breakdown for ${months[0].label} instead. Pick a wider date range to see it as a trend over time.`,
+          caption: `Only one month is selected, so there's no trend to draw. This is the per-vertical breakdown for ${months[0].label} instead. Pick a wider date range to see it as a trend over time.`,
         });
         let items;
         if (state.metric === "share") {
@@ -799,7 +841,7 @@ async function boot() {
           }));
         }
         Charts.renderBarChart(body, tableSlot, {
-          items, metric: state.metric, categoryLabel: "Vertical", chartLabel: `Vertical breakdown — ${months[0].label}`,
+          items, metric: state.metric, categoryLabel: "Vertical", chartLabel: `Vertical breakdown for ${months[0].label}`,
         });
       } else if (singleVertical) {
         const [onlyVertical] = state.verticals;
@@ -837,7 +879,7 @@ async function boot() {
         // shifting-baseline bands.
         const basisMetric = state.metric === "turnover" ? "turnover" : "ggr";
         const basisLabel = basisMetric === "turnover" ? "Turnover" : "GGR";
-        const viewDisabledTitle = "Only one month is selected — nothing to stack or trace a line across, so this shows a single-month breakdown instead";
+        const viewDisabledTitle = "Only one month is selected, so there's nothing to stack or trace a line across. This shows a single-month breakdown instead.";
         const viewToggle = createSegmented({
           options: [
             { key: "stacked", label: "Stacked", disabled: singleMonth, title: singleMonth ? viewDisabledTitle : undefined },
@@ -847,8 +889,8 @@ async function boot() {
           onChange: (key) => { state.verticalTrendView = key; render(); },
         });
         const viewCaption = state.verticalTrendView === "lines"
-          ? "Each vertical's own % share line, independent of the others — use this to spot exactly when one vertical's share overtakes another's (where their lines cross)."
-          : "Stacked to 100% each month — reads composition, but two adjacent bands overtaking each other can be hard to see since their baselines shift together. Switch to Lines to track that directly.";
+          ? "Each vertical's own % share line, independent of the others. Use this to spot exactly when one vertical's share overtakes another's, where their lines cross."
+          : "Stacked to 100% each month. This reads composition well, but two adjacent bands overtaking each other can be hard to see since their baselines shift together. Switch to Lines to track that directly.";
         const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
           title: "Market trend by vertical",
           caption: `Each vertical's % share of total ${basisLabel}, per month. ${viewCaption}`,
@@ -891,7 +933,7 @@ async function boot() {
         selected: { value: state.operatorShareBasis },
         onChange: (key) => { state.operatorShareBasis = key; render(); },
       });
-      const shareViewDisabledTitle = "Only one month is selected — nothing to stack or trace a line across, so this shows a single-month breakdown instead";
+      const shareViewDisabledTitle = "Only one month is selected, so there's nothing to stack or trace a line across. This shows a single-month breakdown instead.";
       const shareViewToggle = createSegmented({
         options: [
           { key: "stacked", label: "Stacked", disabled: singleMonth, title: singleMonth ? shareViewDisabledTitle : undefined },
@@ -902,13 +944,13 @@ async function boot() {
       });
       const basisLabel = state.operatorShareBasis === "turnover" ? "Turnover" : "GGR";
       const viewCaption = singleMonth
-        ? `Only one month is selected, so there's no trend to draw — this is the per-operator share breakdown for ${months[0]?.label} instead. Pick a wider date range to see it as a trend over time.`
+        ? `Only one month is selected, so there's no trend to draw. This is the per-operator share breakdown for ${months[0]?.label} instead. Pick a wider date range to see it as a trend over time.`
         : state.operatorShareView === "lines"
-        ? "Each operator's own % share line, independent of the others — use this to spot exactly when one operator's share overtakes another's (where their lines cross)."
-        : "Stacked to 100% each month — reads composition, but two adjacent bands overtaking each other can be hard to see since their baselines shift together. Switch to Lines to track that directly.";
+        ? "Each operator's own % share line, independent of the others. Use this to spot exactly when one operator's share overtakes another's, where their lines cross."
+        : "Stacked to 100% each month. This reads composition well, but two adjacent bands overtaking each other can be hard to see since their baselines shift together. Switch to Lines to track that directly.";
       const { body, tableSlot } = Charts.buildCardShell(cards.operatorShare, {
         title: "Operator share",
-        caption: `Top 7 operators (ranked by Online Sportsbetting GGR over the selected date range, regardless of the Vertical/Channel filters above) — their % share of total ${basisLabel}, per month. Independent of the GGR/Turnover/Margin/Share toggle above, which scopes the rest of the dashboard. ${viewCaption}`,
+        caption: `Top 7 operators, ranked by Online Sportsbetting GGR over the selected date range regardless of the Vertical/Channel filters above. Shows each one's % share of total ${basisLabel} per month, independent of the GGR/Turnover/Margin/Share toggle above, which scopes the rest of the dashboard. ${viewCaption}`,
         extra: [shareBasisToggle.el, shareViewToggle.el],
       });
       // "Top 7" is always auto-detected — ranked by Online Sportsbetting GGR
@@ -944,7 +986,7 @@ async function boot() {
           }))
           .sort((a, b) => b.segments[0].value - a.segments[0].value);
         Charts.renderBarChart(body, tableSlot, {
-          items, metric: "share", categoryLabel: "Operator", chartLabel: `Operator share breakdown — ${months[0].label}`,
+          items, metric: "share", categoryLabel: "Operator", chartLabel: `Operator share breakdown for ${months[0].label}`,
           noteLabel: Charts.METRIC_LABEL[groupMetric],
         });
       } else {
@@ -1049,14 +1091,14 @@ async function boot() {
     // --- Compare: trend per selected operator ------------------------------
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.compareTrend, {
-        title: "Compared operators — trend",
+        title: "Compared operators: trend",
         caption: state.metric === "share"
           ? "Each operator's % share of total GGR, per month, within whatever verticals & channels are selected above."
           : "Sums GGR/Turnover across whatever verticals & channels are selected above.",
       });
       const selectedOps = [...state.operators];
       if (selectedOps.length === 0) {
-        Charts.emptyState(body, "Select up to 6 operators in “Compare operators” above to trace their trend here.");
+        Charts.emptyState(body, "Pick operators above to trace their trend here.");
         tableSlot.innerHTML = "";
       } else if (singleMonth) {
         // Same fix as Market trend/Operator share: a 1-point line is a
@@ -1078,7 +1120,7 @@ async function boot() {
         }
         items.sort((a, b) => b.segments[0].value - a.segments[0].value);
         Charts.renderBarChart(body, tableSlot, {
-          items, metric: state.metric, categoryLabel: "Operator", chartLabel: `Compared operators — ${months[0].label}`,
+          items, metric: state.metric, categoryLabel: "Operator", chartLabel: `Compared operators for ${months[0].label}`,
         });
       } else if (state.metric === "share") {
         const marketTotals = Agg.totalsByMonth(filtered, months, "ggr");
@@ -1101,17 +1143,17 @@ async function boot() {
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.compareIndexed, {
         title: "Compared operators vs. market",
-        caption: `Indexed to 100 at ${months[0] ? months[0].label : "the start"} — the first month of whatever date range is selected above. A line above the dashed 100 mark is outgrowing the market since then, below is lagging it.`,
+        caption: `Indexed to 100 at ${months[0] ? months[0].label : "the start"}, the first month of whatever date range is selected above. A line above the dashed 100 mark is outgrowing the market since then, below is lagging it.`,
       });
       const selectedOps = [...state.operators];
       if (selectedOps.length === 0) {
-        Charts.emptyState(body, "Select up to 6 operators above to see whether they're outgrowing or lagging the overall market.");
+        Charts.emptyState(body, "Pick operators above to see if they're outgrowing or lagging the market.");
         tableSlot.innerHTML = "";
       } else if (singleMonth) {
         // Indexed-to-100 is a trajectory over time by definition — with one
         // month there's nothing to index against, so a bar-chart fallback
         // (like the other cards) wouldn't mean anything here either.
-        Charts.emptyState(body, "Indexed growth needs more than one month to show a trajectory — pick a wider date range to compare growth here.");
+        Charts.emptyState(body, "Indexed growth needs more than one month to show a trajectory. Pick a wider date range to compare growth here.");
         tableSlot.innerHTML = "";
       } else {
         // "Share" and "index" are both already relative — indexing a share
@@ -1133,7 +1175,7 @@ async function boot() {
     // --- Compare: vertical x channel matrix --------------------------------
     {
       const { body, tableSlot } = Charts.buildCardShell(cards.compareMatrix, {
-        title: "Compared operators — vertical × channel breakdown",
+        title: "Compared operators: vertical × channel breakdown",
         caption: state.metric === "share"
           ? "Each operator's % share of GGR within that exact vertical × channel slice, e.g. their share of Sportsbetting/Online specifically."
           : "Totals over the selected date range, after the vertical/channel filters above.",

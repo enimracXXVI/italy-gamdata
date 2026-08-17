@@ -26,6 +26,12 @@ the JS logic either report blamed. The global rule closes the whole bug
 class rather than requiring every future toggleable element to remember an
 explicit `.foo[hidden]` override.
 
+**User-facing copy** (captions, titles, empty states, tooltip/table
+labels, Data Quality descriptions) is short, plain sentences — no em
+dashes, no stacked parentheticals, nothing that reads like it was written
+to sound impressive rather than to be understood on a first read. Prefer
+two short sentences over one long one joined by a dash.
+
 ---
 
 ## 1. Color tokens
@@ -63,19 +69,26 @@ regardless of what else is selected. Per operator, `app.js` builds a
 order* (`Charts.rankColorClass(index)`) and reuses it everywhere an operator
 identity needs a color in that render pass (Compared-operators trend,
 vs.-market, the leaderboard's highlighted rows). Operator share is separate:
-it's never wired to "Compare operators" — it always auto-picks the top 7 by
+it's never wired to "Operators" — it always auto-picks the top 7 by
 Online Sportsbetting GGR within the selected date range (regardless of the
 Vertical/Channel filters elsewhere) and colors that ranking with
 `rankColorClass` in ranked order. `charts.js` still exports a
 `operatorColorClass(name)` stable-hash function, but it's used only for the
-"Compare operators" *picker's* preview swatches (a static list of every
+"Operators" *picker's* preview swatches (a static list of every
 possible choice, not a set of entities being actively compared side by
 side) — it used to also color the compare-set charts, but a hash into 8
 slots collides constantly once more than 2-3 operators are involved (two
 compared operators could render as the literal same color, which defeats
 the entire point of "compare"). Position-based coloring is collision-free
-by construction since the compare-set is capped at 6 and there are 8 slots;
-prefer it over the hash for any new "identity color" need.
+by construction up to 8 selections (`rankColorClass` falls back to the
+neutral `series-other` grey past that, same as the "Other" fold-in bucket,
+rather than colliding); prefer it over the hash for any new "identity
+color" need. The "Operators" filter itself has no selection cap (removed
+along with its old 6-operator limit — see the `.filter-segmented` /
+Growth-by-operator notes below), so past 8 picks the trend/matrix charts'
+extra lines fall back to that same grey rather than losing legibility to
+color collisions; that's an accepted tradeoff for letting someone pick
+more than a handful.
 
 **Every `series-*`/`seq-*` class sets both an SVG color (`fill`/`stroke`) and
 `background-color`.** They're used on two different kinds of element: SVG
@@ -128,14 +141,14 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-search` | Text input at the top of a popover with >8 options (Vertical, Operator) |
 | `.filter-option-list` | Scrollable list of checkboxes inside a popover. `overscroll-behavior: contain` stops scrolling past its own top/bottom from "chaining" into a scroll of the page underneath (same fix applied to the mobile sheet's own `#filter-bar` scroll) |
 | `.filter-option` | One checkbox row |
-| `.filter-option--disabled` | Dimmed state once a `max` cap (operators: 6) is reached. `updateOptionStates` (`js/components.js`) coerces the underlying `atCap` check to a real boolean (`!!(...)`) before handing it to `classList.toggle(cls, atCap)` — for an uncapped control (Vertical, Channel: no `max`), `max && …` short-circuits to `undefined`, and passing a literal `undefined` as `classList.toggle`'s second argument does **not** behave like `force: false` the way it reads; real browsers treat it as "no force given" and fall back to a blind toggle, flipping the class on every call regardless of whether anything was actually capped. That's what greyed out Vertical/Channel options with a not-allowed cursor even though nothing was ever at a cap |
+| `.filter-option--disabled` | Dimmed state once a `max` cap is reached — only Vertical, Channel, and Operators are all uncapped (`max` unset) now, so in practice this never triggers, but the mechanism stays generic for any future capped control. `updateOptionStates` (`js/components.js`) coerces the underlying `atCap` check to a real boolean (`!!(...)`) before handing it to `classList.toggle(cls, atCap)` — for an uncapped control, `max && …` short-circuits to `undefined`, and passing a literal `undefined` as `classList.toggle`'s second argument does **not** behave like `force: false` the way it reads; real browsers treat it as "no force given" and fall back to a blind toggle, flipping the class on every call regardless of whether anything was actually capped. That's what greyed out Vertical/Channel options with a not-allowed cursor even though nothing was ever at a cap |
 | `.filter-option__swatch` | Small color square before a vertical/operator name, tied to its `series-N` |
 | `.filter-option__label` | The option's text, ellipsis-truncated if too long |
 | `.filter-option__meta` | Secondary text after the label (operator's group name) |
 | `.filter-popover__footer` | Row holding the footer actions + the "Up to N" hint |
 | `.filter-popover__footer-actions` | Groups "Select all" and "Clear" together on the footer's left side |
 | `.filter-popover__clear` | Shared class for both the "Select all" and "Clear" buttons in a multi-select popover footer (same look, so it wasn't worth a second class name) |
-| `.filter-popover__hint` | Muted helper text ("Up to 6") |
+| `.filter-popover__hint` | Muted helper text ("Up to N") — empty for every current filter (Vertical, Channel, Operators are all uncapped), but stays wired up for any future control that does need one |
 | `.filter-preset-list` / `.filter-preset` | Date-range preset rows (All time, Last month, Last 3/6/12 months, YTD, Custom) — "Last month" is the single most recent month with data, not the current calendar month (which may have none yet), and is the default on first load and after Reset (a multi-year "All time" view isn't the useful thing to land on) |
 | `.filter-preset__check` | The ✓ mark, visible only on `.filter-preset--selected` |
 | `.filter-preset-custom` | Wraps the custom-range picker: a "From" row and a "To" row, stacked |
@@ -271,13 +284,32 @@ here, not just a disabled control sitting above one.
 **"Growth by operator," "Growth by vertical," and "Growth by channel"**
 (`js/app.js`, an untitled section of their own — see §2 — right after the
 KPI row and before "Market overview") lead the dashboard: MoM/YoY is its
-headline read. They always show something regardless of whether any
-operator is selected in "Compare operators" — that section is a separate
-concern (hand-picked per-operator trend over time), while these are
-market-wide "who/what is actually moving right now" questions. Growth by
-operator ranks by GGR within the current filters, top 15 — same convention
-as the Operator leaderboard further down, not tied to which operators (if
-any) are picked in "Compare operators."
+headline read. Growth by vertical/channel always show something regardless
+of the "Operators" filter — that filter is a separate concern there
+(hand-picked per-operator trend over time, further down in "Operator
+compare"), while these two cards are market-wide "who/what is actually
+moving right now" questions.
+
+**Growth by operator has its own local Top 10 / Select toggle**
+(`state.growthOperatorMode`), independent of the shared MoM/YoY one.
+"Top 10" auto-ranks by GGR within the current filters — same convention as
+the Operator leaderboard further down — regardless of what's picked in
+"Operators." "Select" shows exactly the operators picked in that filter
+instead, in whatever order they were picked, for comparing a specific
+hand-picked set rather than whoever the market ranks highest; with nothing
+picked, it shows an empty state rather than an empty chart. This is the
+one card where the "Operators" filter and the market-wide framing meet —
+"Select" is deliberately the only place that filter's picks drive a
+Growth card, since Growth by vertical/channel have too few categories for
+picking a subset to mean anything.
+
+A vertical or channel's "share" is undefined the same way a whole's share
+of itself always is: with only one vertical (or one channel) selected in
+the filters, that vertical/channel *is* the total it would be a share of,
+so the figure is always 100% and the MoM/YoY delta is always exactly 0%.
+Rather than plot a flat chart that reads as broken, Growth by
+vertical/channel show a one-line explanation instead once `state.metric
+=== "share"` and the respective filter is down to a single selection.
 
 All three share **one MoM/YoY period** (`state.growthPeriod`) — each card
 still gets its own `createSegmented` toggle instance (`growthPeriodToggle()`
@@ -332,8 +364,10 @@ and scales via CSS width, so one code path serves desktop and mobile.
 |---|---|
 | `.viz-svg` | The `<svg>` root for line/bar charts. Its `viewBox` width is set in JS to the card's *measured* pixel width (`measureWidth()` in `charts.js`) rather than a fixed constant — that's what keeps font/stroke sizes visually consistent whether the chart sits in a 1-column or 2-column card |
 | `.viz-svg--fixed` | Added alongside `.viz-svg` on heatmap panels only — keeps their natural cell size instead of stretching to fill a wide card |
-| `.viz-svg--growing` | Added alongside `.viz-svg` on `renderDivergingBarChart`'s chart (Growth by operator/vertical/channel) — unlike `--fixed`, no `max-width` cap: this SVG is *meant* to exceed its card's width once it has enough categories, growing wider rather than compressing, and scrolling within `.viz-scroll-x` (below) rather than shrinking every column to fit |
+| `.viz-svg--growing` | Added alongside `.viz-svg` on `renderDivergingColumns`'s chart (the column layout of `renderDivergingBarChart` — see below) — unlike `--fixed`, no `max-width` cap: this SVG is *meant* to exceed its card's width once it has enough categories, growing wider rather than compressing, and scrolling within `.viz-scroll-x` (below) rather than shrinking every column to fit |
 | `.viz-scroll-x` | Horizontal-scroll wrapper around a `--growing` SVG, same idea as `.viz-table-wrap` below but for a chart instead of a table |
+| `.viz-scroll-x--center` | Added alongside `.viz-scroll-x` when the columns still don't fill the card even after stretching to `maxColW` (e.g. Channel narrowed to just "Online") — centers the chart instead of leaving it pinned to the left edge with a lopsided gap on the right |
+| `.viz-scroll-y` | Vertical-scroll, height-capped wrapper around `renderDivergingRows`'s chart (the row layout — see below); the row-count equivalent of `.viz-scroll-x` |
 | `.viz-gridline` | Horizontal gridlines |
 | `.viz-axis-line` | The solid x/y axis lines |
 | `.viz-axis-label` + `--x` / `--y` | Tick labels. X-axis labels use evenly-spaced indices (`evenlySpacedIndices()`), never a modulo step, so the last label never crowds the one before it |
@@ -346,7 +380,7 @@ and scales via CSS width, so one code path serves desktop and mobile.
 | `.viz-hit-rect` | Invisible pointer-capture layer (one per chart, or one per bar/cell) |
 | `.viz-bar` | A leaderboard bar — a single rounded rect in "Total" mode, or one rect per segment (square-cornered, see `.viz-bar-segment`) in the By channel/By vertical modes |
 | `.viz-bar-segment` | Added alongside `.viz-bar` for each piece of a multi-segment (stacked) bar; adds the thin surface-colored gap stroke between segments |
-| `.viz-bar--dim` | Applied to a bar/area/label when its legend entry is toggled off, or (leaderboard split modes only) to every row whose operator isn't in the "Compare operators" set — segment colors there are fixed to channel/vertical identity, not operator identity, so dimming the whole row is how those modes show emphasis instead |
+| `.viz-bar--dim` | Applied to a bar/area/label when its legend entry is toggled off, or (leaderboard split modes only) to every row whose operator isn't in the "Operators" set — segment colors there are fixed to channel/vertical identity, not operator identity, so dimming the whole row is how those modes show emphasis instead |
 | `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) — optionally followed by `(N%)` when an item carries a `note` (e.g. the single-month Market trend breakdown adds each vertical's % of the total alongside its € figure). `renderBarChart` widens its own right margin (`marginR`, 64px → 130px) whenever any item has a `note`, since the longer combined text overflowed past the card's own edge at the old margin — the SVG doesn't clip content by default |
 | `.viz-bar-category-label` | The row's category name to the left of a bar — an operator name for the Operator leaderboard, but `renderBarChart` (`js/charts.js`) is generic: any caller can hand it `{ operator: <any label>, segments }` rows and pass `categoryLabel`/`chartLabel` to relabel the axis/table/aria-text for what those rows actually are. Left-aligned (`text-anchor: start`) at the card's left edge, not right-aligned against the bar — a right-aligned shared column left a dead gap before any label shorter than the longest one in the set (e.g. "Casino" next to "Horse Racing Fixed Odds"); left-aligned, that same slack falls after the label instead, reading as normal column spacing rather than a gap. Its column width (`labelColW`) is still sized to the longest label actually present (capped at the same width the old fixed constant used), so the bars all still start at one consistent x regardless of alignment |
 | `.viz-diverging-bar` + `--pos` / `--neg` | Bars in `renderDivergingBarChart` (Growth by operator/vertical/channel, `js/charts.js`) — grow up/down from a center 0% baseline instead of from a shared floor. `--pos`/`--neg` carry `--delta-good`/`--delta-bad`, not a categorical hue: growth direction is a *state* (growing vs. shrinking), and the dataviz color rule for a series that means good/bad is "wears status/delta tokens, never categorical," so it reuses the exact pair the KPI tiles already use for the same meaning rather than a fresh diverging pair. When a `metric` is passed, its tooltip and table also carry the two raw values behind the %, not just the delta — "Prior month"/"Curr. month" (MoM) or "Prev. year"/"Curr. year" (YoY) — formatted with `formatMetric`; the accessible table gains two columns for the same reason the single-month bar chart's `note` does (below): the % alone doesn't tell you whether it moved from a large base or a tiny one |
@@ -390,6 +424,39 @@ which reads exactly like a text-cutoff bug rather than a margin one.
 Fixed by sizing both `marginL` and `marginB` off the same estimate
 (`longestLabel * charWidth / √2`), rather than a flat constant tuned for
 whatever label set happened to be on screen during testing.
+
+**Columns don't stay pinned to their minimum width just because there's
+room to spare.** A card with only 1-2 categories (Channel narrowed to
+"Online," or Growth by vertical narrowed to one vertical) has far more
+width available than the minimum column needs, and a tiny chart adrift in
+an otherwise-empty card reads as broken, not "correctly sized." Each
+column stretches to fill the card's actual measured width, capped at
+`maxColW` (200px) so 1-2 categories don't turn into one absurdly fat bar,
+and centered (`.viz-scroll-x--center`) if there's still slack left over
+after that cap. The horizontal-scroll-plus-minimum-width layout only
+kicks back in once there are enough categories that even the minimum
+doesn't fit the card.
+
+**`renderDivergingBarChart` actually has two layouts, columns and rows**,
+picked automatically by item count (`ROW_LAYOUT_THRESHOLD = 10` in
+`charts.js`) — not a caller-supplied flag, since the right layout is a
+function of how many categories there are, not what card is asking.
+`renderDivergingColumns` is everything described above; past the
+threshold, `renderDivergingRows` takes over — the pre-vertical-redesign
+horizontal layout, one row per category, wrapped in `.viz-scroll-y`
+instead of growing the card's height without bound. Growth by
+vertical/channel never have enough categories to reach the threshold, so
+they always render as columns. Growth by operator can go either way: "Top
+10" is capped at 10 by definition (always columns); "Select" can exceed it
+once someone picks more than 10 operators in the "Operators" filter, at
+which point it switches to the row layout and scrolls *down* to see the
+rest rather than sideways — the layout a hand-picked, potentially-long
+list is actually suited to, versus the layout a fixed top-N ranking is
+suited to. Both layouts share the same tooltip-row-building
+(`tooltipRowsFor`) and the same accessible-table code at the end of
+`renderDivergingBarChart`, so the two numbers-behind-the-%-figure and the
+"Previous"/"New" column labels behave identically regardless of which one
+rendered.
 
 ---
 

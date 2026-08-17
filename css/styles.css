@@ -777,6 +777,11 @@ button { font-family: inherit; }
    `.viz-scroll-x` rather than compress. */
 .viz-svg--growing { width: auto; }
 .viz-scroll-x { overflow-x: auto; }
+.viz-scroll-x--center { display: flex; justify-content: center; }
+/* Row-layout diverging bar chart (many hand-picked operators): scrolls
+   down instead of sideways, capped so the card's height stays predictable
+   regardless of how many rows there are. */
+.viz-scroll-y { max-height: 360px; overflow-y: auto; }
 
 .viz-gridline { stroke: var(--grid-line); stroke-width: 1; shape-rendering: crispEdges; }
 .viz-axis-line { stroke: var(--axis-line); stroke-width: 1; shape-rendering: crispEdges; }

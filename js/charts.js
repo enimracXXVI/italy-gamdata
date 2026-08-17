@@ -651,6 +651,16 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
  * same --delta-good/--delta-bad pair the KPI tiles already use for exactly
  * this meaning — not a categorical hue — and every value carries its own
  * +/- sign as the required label pairing for a state color. */
+function tooltipRowsFor(it, metric, previousLabel, newLabel, valueColumnLabel, hasValue, valueText) {
+  return metric
+    ? [
+        { label: previousLabel, value: formatMetric(it.prev, metric) },
+        { label: newLabel, value: formatMetric(it.latest, metric) },
+        { label: valueColumnLabel, value: hasValue ? valueText : "No comparable prior period" },
+      ]
+    : [{ label: valueColumnLabel, value: hasValue ? valueText : "No comparable prior period" }];
+}
+
 // Vertical, not horizontal: a horizontal diverging bar chart's height grows
 // with the item count (one row each), which for 15 operators pushed the
 // card past a full screen's height on its own, forcing a scroll through
@@ -658,14 +668,9 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
 // grows the *width* instead — capped visually by wrapping in a
 // horizontally-scrolling container (`.viz-scroll-x`), so the card's height
 // stays fixed regardless of how many categories it holds, and most category
-// counts (up to ~20 on a normal desktop width) need no scrolling at all.
-export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLabel, chartLabel, metric, previousLabel = "Previous", newLabel = "New" }) {
-  clear(body);
-  if (items.length === 0) {
-    emptyState(body, "No data for the current filters.");
-    return;
-  }
-  const colW = 46, gap = 20;
+// counts (up to the `ROW_LAYOUT_THRESHOLD` below) need no scrolling at all.
+function renderDivergingColumns(body, items, { chartLabel, metric, previousLabel, newLabel, valueColumnLabel }) {
+  const minColW = 46, gap = 20, maxColW = 200;
   const maxLabelChars = 22;
   const truncate = (s) => (s.length > maxLabelChars ? `${s.slice(0, maxLabelChars - 1)}…` : s);
   // A rotated (-45deg), end-anchored label sweeps up-and-LEFT from its own
@@ -685,6 +690,20 @@ export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLab
   const marginL = 14 + labelSweep;
   const marginR = 10, marginT = 26, marginB = 32 + labelSweep;
   const plotH = 170;
+
+  // Columns default to their minimum width, but a card with only 1-2
+  // categories (say, Channel narrowed to just "Online") has far more room
+  // than that needs, and a tiny chart adrift in a mostly-empty card reads
+  // as broken. Stretch each column to use the card's actual measured width
+  // when there's slack to give it — capped at `maxColW` so 1-2 categories
+  // don't turn into a single absurdly fat bar — and only fall back to the
+  // minimum-width-plus-horizontal-scroll layout once there are enough
+  // categories that even the minimum doesn't fit.
+  const available = measureWidth(body);
+  const neededAtMin = marginL + items.length * (minColW + gap) - gap + marginR;
+  const colW = neededAtMin < available
+    ? Math.min(maxColW, (available - marginL - marginR - (items.length - 1) * gap) / items.length)
+    : minColW;
 
   const W = marginL + items.length * (colW + gap) - gap + marginR;
   const H = marginT + plotH + marginB;
@@ -733,13 +752,7 @@ export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLab
 
     const hitArea = svgEl("rect", { x, y: marginT, width: colW, height: plotH }, "viz-hit-rect");
     svg.appendChild(hitArea);
-    const tooltipRows = metric
-      ? [
-          { label: previousLabel, value: formatMetric(it.prev, metric) },
-          { label: newLabel, value: formatMetric(it.latest, metric) },
-          { label: valueColumnLabel, value: hasValue ? valueText : "No comparable prior period" },
-        ]
-      : [{ label: valueColumnLabel, value: hasValue ? valueText : "No comparable prior period" }];
+    const tooltipRows = tooltipRowsFor(it, metric, previousLabel, newLabel, valueColumnLabel, hasValue, valueText);
     const onHover = (evt) => showTooltip(evt.clientX, evt.clientY, String(it.key ?? ""), tooltipRows);
     hitArea.addEventListener("pointermove", onHover);
     hitArea.addEventListener("pointerdown", onHover);
@@ -747,9 +760,106 @@ export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLab
   });
 
   const scrollWrap = document.createElement("div");
-  scrollWrap.className = "viz-scroll-x";
+  // Centered rather than left-pinned when there's still slack after
+  // stretching columns to `maxColW` (a handful of categories, e.g. Channel
+  // narrowed to just "Online") — otherwise the leftover space reads as a
+  // lopsided gap on the right instead of even breathing room either side.
+  scrollWrap.className = W < available ? "viz-scroll-x viz-scroll-x--center" : "viz-scroll-x";
   scrollWrap.appendChild(svg);
   body.appendChild(scrollWrap);
+}
+
+// Rows, not columns: once there are more categories than `renderDivergingColumns`
+// comfortably fits (picking, say, 14 operators out of 15 to look at), forcing
+// them all into a narrow horizontal-scrolling strip means never seeing more
+// than a handful at once. A plain vertical list — one row per category,
+// scrolling *down* inside a height-capped card instead of *sideways* — is a
+// much more natural way to skim a long, hand-picked set.
+function renderDivergingRows(body, items, { chartLabel, metric, previousLabel, newLabel, valueColumnLabel }) {
+  const rowH = 26, gap = 8;
+  const marginL = 8, marginR = 64, marginT = 4, marginB = 4;
+  const maxLabelChars = 24;
+  const truncate = (s) => (s.length > maxLabelChars ? `${s.slice(0, maxLabelChars - 1)}…` : s);
+  const longestLabel = Math.max(...items.map((it) => truncate(String(it.key ?? "")).length), 1);
+  const labelColW = Math.min(168, Math.max(40, Math.round(longestLabel * 6.3 + 16)));
+  const W = measureWidth(body);
+  const barAreaX0 = marginL + labelColW;
+  const barAreaW = Math.max(0, W - marginL - labelColW - marginR);
+  const centerX = barAreaX0 + barAreaW / 2;
+  const halfW = barAreaW / 2;
+  const H = marginT + marginB + items.length * (rowH + gap) - gap;
+
+  const maxAbs = Math.max(...items.map((it) => Math.abs(it.value ?? 0)), 1);
+  const xScale = (v) => (Math.abs(v) / maxAbs) * halfW;
+
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": chartLabel }, "viz-svg");
+  svg.appendChild(svgEl("line", { x1: centerX, x2: centerX, y1: marginT, y2: H - marginB }, "viz-baseline"));
+
+  items.forEach((it, i) => {
+    const y = marginT + i * (rowH + gap);
+
+    const label = svgEl("text", { x: marginL, y: y + rowH / 2 + 4 }, "viz-bar-category-label");
+    label.textContent = truncate(String(it.key ?? ""));
+    svg.appendChild(label);
+
+    const hasValue = typeof it.value === "number" && Number.isFinite(it.value);
+    const positive = hasValue && it.value >= 0;
+    let valueX = centerX, anchor = "middle", valueText = "—", labelDirClass = "";
+    if (hasValue) {
+      const w = xScale(it.value);
+      if (w > 0) {
+        const rectAttrs = positive ? { x: centerX, y, width: w, height: rowH } : { x: centerX - w, y, width: w, height: rowH };
+        svg.appendChild(svgEl("rect", rectAttrs, `viz-diverging-bar ${positive ? "viz-diverging-bar--pos" : "viz-diverging-bar--neg"}`));
+      }
+      valueX = positive ? centerX + w + 8 : centerX - w - 8;
+      anchor = positive ? "start" : "end";
+      valueText = `${positive ? "+" : ""}${it.value.toFixed(1)}%`;
+      labelDirClass = positive ? "viz-bar-label--good" : "viz-bar-label--bad";
+    }
+    const valueLabel = svgEl("text", { x: valueX, y: y + rowH / 2 + 4, "text-anchor": anchor }, `viz-bar-label ${labelDirClass}`);
+    valueLabel.textContent = valueText;
+    svg.appendChild(valueLabel);
+
+    const hitArea = svgEl("rect", { x: marginL, y, width: Math.max(0, W - marginL - marginR), height: rowH }, "viz-hit-rect");
+    svg.appendChild(hitArea);
+    const tooltipRows = tooltipRowsFor(it, metric, previousLabel, newLabel, valueColumnLabel, hasValue, valueText);
+    const onHover = (evt) => showTooltip(evt.clientX, evt.clientY, String(it.key ?? ""), tooltipRows);
+    hitArea.addEventListener("pointermove", onHover);
+    hitArea.addEventListener("pointerdown", onHover);
+    hitArea.addEventListener("pointerleave", hideTooltip);
+  });
+
+  const scrollWrap = document.createElement("div");
+  scrollWrap.className = "viz-scroll-y";
+  scrollWrap.appendChild(svg);
+  body.appendChild(scrollWrap);
+}
+
+// Above this many categories, `renderDivergingColumns`'s columns get too
+// thin to read comfortably even after scrolling — `renderDivergingRows`'s
+// plain list reads better past this point.
+const ROW_LAYOUT_THRESHOLD = 10;
+
+/** `items`: [{ key, value }] — `value` is a signed growth percent (12.4 for
+ * +12.4%, -8.1 for -8.1%) or `null`/`undefined` when there's nothing to
+ * compare against (e.g. no same-month-last-year data yet). Bars grow from a
+ * center 0% line, right for growth, left for decline. This is a *state*
+ * (growing vs. shrinking), not a series identity, so it's colored with the
+ * same --delta-good/--delta-bad pair the KPI tiles already use for exactly
+ * this meaning — not a categorical hue — and every value carries its own
+ * +/- sign as the required label pairing for a state color. */
+export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLabel, chartLabel, metric, previousLabel = "Previous", newLabel = "New" }) {
+  clear(body);
+  if (items.length === 0) {
+    emptyState(body, "No data for the current filters.");
+    return;
+  }
+  const opts = { chartLabel, metric, previousLabel, newLabel, valueColumnLabel };
+  if (items.length > ROW_LAYOUT_THRESHOLD) {
+    renderDivergingRows(body, items, opts);
+  } else {
+    renderDivergingColumns(body, items, opts);
+  }
 
   clear(tableSlot);
   tableSlot.appendChild(buildTable({
@@ -831,12 +941,12 @@ export function renderHeatmapGrid(body, tableSlot, { panels, metric }) {
         svg.appendChild(cellLabel);
 
         cell.addEventListener("pointermove", (evt) => {
-          showTooltip(evt.clientX, evt.clientY, `${operator} — ${v}`, [
+          showTooltip(evt.clientX, evt.clientY, `${operator}: ${v}`, [
             { colorClass: seqClass, label: c, value: formatMetric(value, metric) },
           ]);
         });
         cell.addEventListener("pointerdown", (evt) => {
-          showTooltip(evt.clientX, evt.clientY, `${operator} — ${v}`, [
+          showTooltip(evt.clientX, evt.clientY, `${operator}: ${v}`, [
             { colorClass: seqClass, label: c, value: formatMetric(value, metric) },
           ]);
         });
