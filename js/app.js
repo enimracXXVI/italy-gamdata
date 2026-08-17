@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608171408";
-import * as Agg from "./aggregate.js?v=202608171408";
-import * as Charts from "./charts.js?v=202608171408";
-import * as Quality from "./quality.js?v=202608171408";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171408";
+} from "./data.js?v=202608171504";
+import * as Agg from "./aggregate.js?v=202608171504";
+import * as Charts from "./charts.js?v=202608171504";
+import * as Quality from "./quality.js?v=202608171504";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171504";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -380,6 +380,7 @@ async function boot() {
   const urlBasis = urlParams.get("basis");
   const urlLeaderboardMode = urlParams.get("lb");
   const urlShareView = urlParams.get("shareview");
+  const urlVerticalTrendView = urlParams.get("vtv");
   const urlGrowthPeriod = urlParams.get("gp");
   const urlTab = urlParams.get("tab");
 
@@ -394,6 +395,7 @@ async function boot() {
     metric: urlMetric && VALID_METRICS.has(urlMetric) ? urlMetric : "ggr",
     operatorShareBasis: urlBasis && VALID_BASIS.has(urlBasis) ? urlBasis : "ggr",
     operatorShareView: urlShareView && VALID_SHARE_VIEWS.has(urlShareView) ? urlShareView : "stacked",
+    verticalTrendView: urlVerticalTrendView && VALID_SHARE_VIEWS.has(urlVerticalTrendView) ? urlVerticalTrendView : "stacked",
     leaderboardMode: urlLeaderboardMode && VALID_LEADERBOARD_MODES.has(urlLeaderboardMode) ? urlLeaderboardMode : "total",
     // One shared MoM/YoY toggle across all three Growth cards — they're
     // meant to be read together, so three separately-clickable but
@@ -421,6 +423,7 @@ async function boot() {
     if (state.metric !== "ggr") params.set("metric", state.metric);
     if (state.operatorShareBasis !== "ggr") params.set("basis", state.operatorShareBasis);
     if (state.operatorShareView !== "stacked") params.set("shareview", state.operatorShareView);
+    if (state.verticalTrendView !== "stacked") params.set("vtv", state.verticalTrendView);
     if (state.leaderboardMode !== "total") params.set("lb", state.leaderboardMode);
     if (state.growthPeriod !== "mom") params.set("gp", state.growthPeriod);
     if (activeTab !== "dashboard") params.set("tab", activeTab);
@@ -519,6 +522,7 @@ async function boot() {
       state.metric = "ggr";
       state.operatorShareBasis = "ggr";
       state.operatorShareView = "stacked";
+      state.verticalTrendView = "stacked";
       state.leaderboardMode = "total";
       state.growthPeriod = "mom";
       buildFilterBar();
@@ -560,28 +564,39 @@ async function boot() {
   // page-wide vertical/channel filters, narrowed by a per-category caller;
   // `totalScope` (only relevant for metric "share") defaults to the same
   // scope, since most callers aren't asking a share question.
-  function momPercent(months, metric, momScope = defaultGrowthScope, totalScope = momScope) {
+  // Returns { prev, latest, pct } instead of just the percent — the growth
+  // cards need the two raw values themselves (to show "previous" and "new"
+  // alongside the %), not just the delta.
+  function momValues(months, metric, momScope = defaultGrowthScope, totalScope = momScope) {
     const latestKey = months[months.length - 1]?.key;
-    if (!latestKey) return null;
+    if (!latestKey) return { prev: null, latest: null, pct: null };
     const latestIdx = allMonths.findIndex((m) => m.key === latestKey);
-    if (latestIdx <= 0) return null;
+    if (latestIdx <= 0) return { prev: null, latest: null, pct: null };
     const prevKey = allMonths[latestIdx - 1].key;
     const latest = metricValueAt(latestKey, metric, momScope, totalScope);
     const prev = metricValueAt(prevKey, metric, momScope, totalScope);
-    return latest !== null && prev ? ((latest - prev) / Math.abs(prev)) * 100 : null;
+    const pct = latest !== null && prev ? ((latest - prev) / Math.abs(prev)) * 100 : null;
+    return { prev, latest, pct };
   }
-  // `yoyScope`/`totalScope`: see momPercent above — same pattern, just
+  function momPercent(months, metric, momScope = defaultGrowthScope, totalScope = momScope) {
+    return momValues(months, metric, momScope, totalScope).pct;
+  }
+  // `yoyScope`/`totalScope`: see momValues above — same pattern, just
   // comparing against the same calendar month one year back instead of the
   // preceding month.
-  function yoyPercent(months, metric, yoyScope = defaultGrowthScope, totalScope = yoyScope) {
+  function yoyValues(months, metric, yoyScope = defaultGrowthScope, totalScope = yoyScope) {
     const latestMonthKey = months[months.length - 1]?.key;
-    if (!latestMonthKey) return null;
+    if (!latestMonthKey) return { prev: null, latest: null, pct: null };
     const latest = metricValueAt(latestMonthKey, metric, yoyScope, totalScope);
     const [y, mm] = latestMonthKey.split("-").map(Number);
     const yoyKey = `${y - 1}-${String(mm).padStart(2, "0")}`;
-    if (!allMonths.some((m) => m.key === yoyKey) || latest === null) return null;
+    if (!allMonths.some((m) => m.key === yoyKey) || latest === null) return { prev: null, latest, pct: null };
     const yoyVal = metricValueAt(yoyKey, metric, yoyScope, totalScope);
-    return yoyVal ? ((latest - yoyVal) / Math.abs(yoyVal)) * 100 : null;
+    const pct = yoyVal ? ((latest - yoyVal) / Math.abs(yoyVal)) * 100 : null;
+    return { prev: yoyVal, latest, pct };
+  }
+  function yoyPercent(months, metric, yoyScope = defaultGrowthScope, totalScope = yoyScope) {
+    return yoyValues(months, metric, yoyScope, totalScope).pct;
   }
 
   function renderKPIs(filtered, months) {
@@ -686,13 +701,14 @@ async function boot() {
       const topOps = Agg.topKeysByTotal(filtered, "operator", rankMetric, 15);
       const items = topOps.map((op) => {
         const scope = (r) => r.operator === op && state.verticals.has(r.vertical) && state.channels.has(r.channel);
-        const value = isYoy
-          ? yoyPercent(months, state.metric, scope, defaultGrowthScope)
-          : momPercent(months, state.metric, scope, defaultGrowthScope);
-        return { key: op, value };
+        const { prev, latest, pct } = isYoy
+          ? yoyValues(months, state.metric, scope, defaultGrowthScope)
+          : momValues(months, state.metric, scope, defaultGrowthScope);
+        return { key: op, value: pct, prev, latest };
       });
       Charts.renderDivergingBarChart(body, tableSlot, {
         items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by operator (${growthPeriodLabel})`,
+        metric: state.metric, previousLabel: isYoy ? "Same month last year" : "Prior month",
       });
     }
 
@@ -704,13 +720,14 @@ async function boot() {
       });
       const items = verticalOrder.filter((v) => state.verticals.has(v)).map((v) => {
         const scope = (r) => r.vertical === v && state.channels.has(r.channel);
-        const value = isYoy
-          ? yoyPercent(months, state.metric, scope, defaultGrowthScope)
-          : momPercent(months, state.metric, scope, defaultGrowthScope);
-        return { key: v, value };
+        const { prev, latest, pct } = isYoy
+          ? yoyValues(months, state.metric, scope, defaultGrowthScope)
+          : momValues(months, state.metric, scope, defaultGrowthScope);
+        return { key: v, value: pct, prev, latest };
       });
       Charts.renderDivergingBarChart(body, tableSlot, {
         items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by vertical (${growthPeriodLabel})`,
+        metric: state.metric, previousLabel: isYoy ? "Same month last year" : "Prior month",
       });
     }
 
@@ -722,13 +739,14 @@ async function boot() {
       });
       const items = channelOrder.filter((c) => state.channels.has(c)).map((c) => {
         const scope = (r) => r.channel === c && state.verticals.has(r.vertical);
-        const value = isYoy
-          ? yoyPercent(months, state.metric, scope, defaultGrowthScope)
-          : momPercent(months, state.metric, scope, defaultGrowthScope);
-        return { key: c, value };
+        const { prev, latest, pct } = isYoy
+          ? yoyValues(months, state.metric, scope, defaultGrowthScope)
+          : momValues(months, state.metric, scope, defaultGrowthScope);
+        return { key: c, value: pct, prev, latest };
       });
       Charts.renderDivergingBarChart(body, tableSlot, {
         items, valueColumnLabel: growthPeriodLabel, chartLabel: `Growth by channel (${growthPeriodLabel})`,
+        metric: state.metric, previousLabel: isYoy ? "Same month last year" : "Prior month",
       });
     }
 
@@ -789,15 +807,48 @@ async function boot() {
         Charts.renderTimeSeriesChart(body, tableSlot, {
           months, series, metric: basisMetric, stacked: true, seriesLabel: "Vertical",
         });
-      } else {
+      } else if (state.metric === "hold") {
+        // Margin % isn't additive across verticals, so there's no "share of
+        // margin" to stack or normalize — just each vertical's own margin %
+        // as a line, same as before.
         const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
           title: "Market trend by vertical",
-          caption: state.metric === "hold" ? "Overall margin % per vertical, per month."
-            : state.metric === "share" ? "Each vertical's % share of total GGR, per month — always sums to 100%."
-            : "Stacked monthly total across the selected verticals & channels.",
+          caption: "Overall margin % per vertical, per month.",
         });
-        const groupMetric = state.metric === "share" ? "ggr" : state.metric;
-        const { series } = Agg.monthlySeries(filtered, months, "vertical", groupMetric, null);
+        const { series } = Agg.monthlySeries(filtered, months, "vertical", "hold", null);
+        const colored = series.map((s) => ({ ...s, label: s.key, colorClass: Charts.verticalColorClass(s.key, verticalOrder) }));
+        Charts.renderTimeSeriesChart(body, tableSlot, {
+          months, series: colored, metric: "hold", stacked: false, seriesLabel: "Vertical",
+        });
+      } else {
+        // Same Stacked/Lines pattern as Operator share, below: both views
+        // always plot each vertical's % share of the total (GGR or
+        // Turnover, picked by the page-wide metric toggle — "Share %"
+        // itself is just the GGR case again), with the underlying € figure
+        // carried alongside for the tooltip/table rather than dropped.
+        // "Stacked" reads composition; "Lines" makes one vertical
+        // overtaking another a literal line-crossing instead of two
+        // shifting-baseline bands.
+        const basisMetric = state.metric === "turnover" ? "turnover" : "ggr";
+        const basisLabel = basisMetric === "turnover" ? "Turnover" : "GGR";
+        const viewDisabledTitle = "Only one month is selected — nothing to stack or trace a line across, so this shows a single-month breakdown instead";
+        const viewToggle = createSegmented({
+          options: [
+            { key: "stacked", label: "Stacked", disabled: singleMonth, title: singleMonth ? viewDisabledTitle : undefined },
+            { key: "lines", label: "Lines", disabled: singleMonth, title: singleMonth ? viewDisabledTitle : undefined },
+          ],
+          selected: { value: state.verticalTrendView },
+          onChange: (key) => { state.verticalTrendView = key; render(); },
+        });
+        const viewCaption = state.verticalTrendView === "lines"
+          ? "Each vertical's own % share line, independent of the others — use this to spot exactly when one vertical's share overtakes another's (where their lines cross)."
+          : "Stacked to 100% each month — reads composition, but two adjacent bands overtaking each other can be hard to see since their baselines shift together. Switch to Lines to track that directly.";
+        const { body, tableSlot } = Charts.buildCardShell(cards.verticalTrend, {
+          title: "Market trend by vertical",
+          caption: `Each vertical's % share of total ${basisLabel}, per month. ${viewCaption}`,
+          extra: viewToggle.el,
+        });
+        const { series } = Agg.monthlySeries(filtered, months, "vertical", basisMetric, null);
         // Ascending total — smallest stacks first (bottom), biggest last
         // (top). The bottom band's baseline is pinned to 0 and never moves,
         // so it reads as visually "inert" even when it's the largest
@@ -806,10 +857,11 @@ async function boot() {
         // per-band end label (below) makes the exact value unambiguous
         // regardless of position anyway.
         series.sort((a, b) => a.values.reduce((s, v) => s + v, 0) - b.values.reduce((s, v) => s + v, 0));
-        let colored = series.map((s) => ({ ...s, label: s.key, colorClass: Charts.verticalColorClass(s.key, verticalOrder) }));
-        if (state.metric === "share") colored = Agg.normalizeStackToShare(colored, months);
+        const withRaw = series.map((s) => ({ ...s, label: s.key, colorClass: Charts.verticalColorClass(s.key, verticalOrder), secondaryValues: [...s.values] }));
+        const colored = Agg.normalizeStackToShare(withRaw, months);
         Charts.renderTimeSeriesChart(body, tableSlot, {
-          months, series: colored, metric: state.metric, stacked: state.metric !== "hold", seriesLabel: "Vertical",
+          months, series: colored, metric: "share", secondaryMetric: basisMetric,
+          stacked: state.verticalTrendView === "stacked", seriesLabel: "Vertical",
         });
       }
     }
@@ -870,23 +922,29 @@ async function boot() {
       // kept separate from stacking order, below.
       const ranked = series.filter((s) => s.key !== "Other")
         .sort((a, b) => b.values.reduce((s, v) => s + v, 0) - a.values.reduce((s, v) => s + v, 0));
-      const withColor = ranked.map((s, i) => ({ ...s, label: s.key, colorClass: Charts.rankColorClass(i) }));
+      const withColor = ranked.map((s, i) => ({ ...s, label: s.key, colorClass: Charts.rankColorClass(i), secondaryValues: [...s.values] }));
       // Stack ascending (smallest first/bottom, biggest last/top — see the
       // Market trend chart for why); "Other" anchors the bottom as a neutral
       // base rather than sitting on top of the biggest named operator.
       let colored = [...withColor].reverse();
-      if (others) colored.unshift({ ...others, label: "Other", colorClass: "series-other" });
+      if (others) colored.unshift({ ...others, label: "Other", colorClass: "series-other", secondaryValues: [...others.values] });
       colored = Agg.normalizeStackToShare(colored, months);
       if (singleMonth) {
         const items = colored
-          .map((s) => ({ operator: s.label, segments: [{ key: "total", label: "Share", value: s.values[0] || 0, colorClass: s.colorClass }] }))
+          .map((s) => ({
+            operator: s.label,
+            segments: [{ key: "total", label: "Share", value: s.values[0] || 0, colorClass: s.colorClass }],
+            note: Charts.formatMetric(s.secondaryValues[0] || 0, groupMetric),
+          }))
           .sort((a, b) => b.segments[0].value - a.segments[0].value);
         Charts.renderBarChart(body, tableSlot, {
           items, metric: "share", categoryLabel: "Operator", chartLabel: `Operator share breakdown — ${months[0].label}`,
+          noteLabel: Charts.METRIC_LABEL[groupMetric],
         });
       } else {
         Charts.renderTimeSeriesChart(body, tableSlot, {
-          months, series: colored, metric: "share", stacked: state.operatorShareView === "stacked", seriesLabel: "Operator",
+          months, series: colored, metric: "share", secondaryMetric: groupMetric,
+          stacked: state.operatorShareView === "stacked", seriesLabel: "Operator",
         });
       }
     }

@@ -363,7 +363,7 @@ export function emptyState(container, message) {
 // Line / stacked-area chart
 // ---------------------------------------------------------------------------
 
-export function renderTimeSeriesChart(body, tableSlot, { months, series, metric, stacked, seriesLabel }) {
+export function renderTimeSeriesChart(body, tableSlot, { months, series, metric, stacked, seriesLabel, secondaryMetric }) {
   clear(body);
   if (months.length === 0 || series.length === 0) {
     emptyState(body, "No data for the current filters.");
@@ -486,7 +486,10 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
       markers[si].setAttribute("cy", yFor(v));
       markers[si].setAttribute("visibility", "visible");
       const raw = s.values[i] || 0;
-      rows.push({ colorClass: s.colorClass, label: s.label, value: formatMetric(raw, metric) });
+      const valueText = secondaryMetric && s.secondaryValues
+        ? `${formatMetric(s.secondaryValues[i] || 0, secondaryMetric)} (${formatMetric(raw, metric)})`
+        : formatMetric(raw, metric);
+      rows.push({ colorClass: s.colorClass, label: s.label, value: valueText });
     });
     showTooltip(evt.clientX, evt.clientY, months[i].label, rows);
   }
@@ -514,9 +517,15 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
 
   clear(tableSlot);
   tableSlot.appendChild(buildTable({
-    caption: `${seriesLabel || "Series"} by month (${METRIC_LABEL[metric]})`,
+    caption: `${seriesLabel || "Series"} by month (${METRIC_LABEL[metric]}${secondaryMetric ? ` & ${METRIC_LABEL[secondaryMetric]}` : ""})`,
     columns: ["Month", ...series.map((s) => s.label)],
-    rows: months.map((m, i) => [m.label, ...series.map((s) => formatMetric(s.values[i] || 0, metric))]),
+    rows: months.map((m, i) => [
+      m.label,
+      ...series.map((s) => {
+        const primary = formatMetric(s.values[i] || 0, metric);
+        return secondaryMetric && s.secondaryValues ? `${formatMetric(s.secondaryValues[i] || 0, secondaryMetric)} (${primary})` : primary;
+      }),
+    ]),
   }));
 }
 
@@ -534,7 +543,7 @@ export function renderTimeSeriesChart(body, tableSlot, { months, series, metric,
  * category label" — reused as-is for non-operator breakdowns (e.g. a
  * single-month vertical breakdown); `categoryLabel`/`chartLabel` control
  * what the axis/table/aria-label call that category everywhere else. */
-export function renderBarChart(body, tableSlot, { items, metric, legend, categoryLabel = "Operator", chartLabel }) {
+export function renderBarChart(body, tableSlot, { items, metric, legend, categoryLabel = "Operator", chartLabel, noteLabel = "% of total" }) {
   clear(body);
   chartLabel = chartLabel ?? `${categoryLabel} leaderboard`;
   if (items.length === 0) {
@@ -602,7 +611,7 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
     const tooltipRows = it.segments.length > 1
       ? it.segments.map((seg) => ({ colorClass: seg.colorClass, label: seg.label, value: formatMetric(seg.value, metric) }))
       : [{ colorClass: it.segments[0]?.colorClass, label: METRIC_LABEL[metric], value: formatMetric(total, metric) }];
-    if (it.note) tooltipRows.push({ label: "% of total", value: it.note });
+    if (it.note) tooltipRows.push({ label: noteLabel, value: it.note });
     const onHover = (evt) => showTooltip(evt.clientX, evt.clientY, it.operator, tooltipRows);
     hitArea.addEventListener("pointermove", onHover);
     hitArea.addEventListener("pointerdown", onHover);
@@ -620,7 +629,7 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
   const segmentKeys = segmented ? items[0].segments.map((s) => s.label) : [];
   tableSlot.appendChild(buildTable({
     caption: `${chartLabel} (${METRIC_LABEL[metric]})`,
-    columns: [categoryLabel, ...segmentKeys, "Total", ...(hasNotes ? ["% of total"] : [])],
+    columns: [categoryLabel, ...segmentKeys, "Total", ...(hasNotes ? [noteLabel] : [])],
     rows: items.map((it, i) => [
       it.operator,
       ...(segmented ? it.segments.map((seg) => formatMetric(seg.value, metric)) : []),
@@ -642,7 +651,7 @@ export function renderBarChart(body, tableSlot, { items, metric, legend, categor
  * same --delta-good/--delta-bad pair the KPI tiles already use for exactly
  * this meaning — not a categorical hue — and every value carries its own
  * +/- sign as the required label pairing for a state color. */
-export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLabel, chartLabel }) {
+export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLabel, chartLabel, metric, previousLabel = "Previous", newLabel = "New" }) {
   clear(body);
   if (items.length === 0) {
     emptyState(body, "No data for the current filters.");
@@ -694,9 +703,14 @@ export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLab
 
     const hitArea = svgEl("rect", { x: marginL, y, width: Math.max(0, W - marginL - marginR), height: rowH }, "viz-hit-rect");
     svg.appendChild(hitArea);
-    const onHover = (evt) => showTooltip(evt.clientX, evt.clientY, String(it.key ?? ""), [
-      { label: valueColumnLabel, value: hasValue ? valueText : "No comparable prior period" },
-    ]);
+    const tooltipRows = metric
+      ? [
+          { label: previousLabel, value: formatMetric(it.prev, metric) },
+          { label: newLabel, value: formatMetric(it.latest, metric) },
+          { label: valueColumnLabel, value: hasValue ? valueText : "No comparable prior period" },
+        ]
+      : [{ label: valueColumnLabel, value: hasValue ? valueText : "No comparable prior period" }];
+    const onHover = (evt) => showTooltip(evt.clientX, evt.clientY, String(it.key ?? ""), tooltipRows);
     hitArea.addEventListener("pointermove", onHover);
     hitArea.addEventListener("pointerdown", onHover);
     hitArea.addEventListener("pointerleave", hideTooltip);
@@ -707,11 +721,13 @@ export function renderDivergingBarChart(body, tableSlot, { items, valueColumnLab
   clear(tableSlot);
   tableSlot.appendChild(buildTable({
     caption: chartLabel,
-    columns: ["Category", valueColumnLabel],
-    rows: items.map((it) => [
-      String(it.key ?? ""),
-      typeof it.value === "number" && Number.isFinite(it.value) ? `${it.value >= 0 ? "+" : ""}${it.value.toFixed(1)}%` : "—",
-    ]),
+    columns: metric ? ["Category", previousLabel, newLabel, valueColumnLabel] : ["Category", valueColumnLabel],
+    rows: items.map((it) => {
+      const pct = typeof it.value === "number" && Number.isFinite(it.value) ? `${it.value >= 0 ? "+" : ""}${it.value.toFixed(1)}%` : "—";
+      return metric
+        ? [String(it.key ?? ""), formatMetric(it.prev, metric), formatMetric(it.latest, metric), pct]
+        : [String(it.key ?? ""), pct];
+    }),
   }));
 }
 

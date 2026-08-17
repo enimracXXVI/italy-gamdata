@@ -143,7 +143,7 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-date-pair-row__label` | The "From"/"To" label itself, given a fixed `min-width` so both rows' selects line up |
 | `.filter-date-select` | Either select in a pair. Month and Year are separate controls (not one combined "July 2026" list) — not every month/year combination the two selects can produce necessarily has data, so picking one snaps to whichever real month is numerically closest (`nearestMonthKey` in `createDateRangeControl`) rather than silently doing nothing |
 | `.filter-date-select--year` | Narrower fixed width for the Year select specifically, since Month needs more room for names like "September" |
-| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle, the Operator share card's local GGR/Turnover and Stacked/Lines toggles, and the Operator leaderboard's Total/By channel/By vertical toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click. `:disabled` (used by the leaderboard toggle when a split mode doesn't apply to the current filters) is muted and non-interactive but stays visible with a `title` tooltip explaining why, rather than vanishing |
+| `.filter-segmented` / `.filter-segmented__option` / `--selected` | The GGR / Turnover / Margin % / Market Share % toggle, the Operator share card's local GGR/Turnover and Stacked/Lines toggles, Market trend by vertical's own Stacked/Lines toggle (same pattern — see below), and the Operator leaderboard's Total/By channel/By vertical toggle. Note: the `:hover` rule is scoped `:not(.filter-segmented__option--selected)` — without that, `:hover` (specificity 0,2,0) beats `--selected` (0,1,0) and the selected button loses its accent fill whenever the pointer is still on it, which is the normal case right after a click. `:disabled` (used by the leaderboard toggle when a split mode doesn't apply to the current filters, and by both Stacked/Lines toggles when a single month is selected) is muted and non-interactive but stays visible with a `title` tooltip explaining why, rather than vanishing |
 | `.filter-reset` | "Reset filters" text button, right-aligned |
 | `.filter-fab` | Mobile-only floating button (bottom-right, hidden ≥860px) that toggles the filter bar's bottom sheet — see the note below. Stays on screen (and on top: `z-index` above the sheet) while the sheet is open specifically so it can double as the close button; its glyph swaps ⚙ ↔ ✕ to signal which tap it's about to do |
 | `.filter-sheet-backdrop` / `--visible` | Full-viewport dimming layer behind the open sheet; also closes it on click |
@@ -172,8 +172,9 @@ the `urlParams` block in `boot()`), via `history.replaceState` — no history
 spam, just live-updates the current entry. Covers date range, verticals,
 channels, compare-operators (in selection order, so a shared link reproduces
 the same colors), the metric toggle, the Operator-share GGR/Turnover basis
-and Stacked/Lines view, the leaderboard split mode, the shared Growth-cards
-MoM/YoY period, and the active tab. Read back on load with
+and Stacked/Lines view, Market trend by vertical's own Stacked/Lines view,
+the leaderboard split mode, the shared Growth-cards MoM/YoY period, and the
+active tab. Read back on load with
 validation against the current dataset (unknown month keys / operator names
 / enum values fall back to defaults instead of throwing — protects against a
 stale link after the sheet's shape changes). `createDateRangeControl` was
@@ -251,8 +252,11 @@ vertical; Operator share and Compared-operators trend by whichever
 operators are in view). Compared-operators-vs-market can't take the same
 fallback — an indexed-to-100 trajectory has no single-month equivalent to
 fall back to — so it shows an explanatory empty state instead. Operator
-share's Stacked/Lines toggle is disabled (with a `title` explaining why) in
-this state, since neither mode means anything for a single data point.
+share's and Market trend by vertical's Stacked/Lines toggles are both
+disabled (with a `title` explaining why) in this state, since neither mode
+means anything for a single data point — Market trend's own toggle isn't
+even built in this branch, since the whole card is a different chart type
+here, not just a disabled control sitting above one.
 
 **"Growth by operator," "Growth by vertical," and "Growth by channel"**
 (`js/app.js`, an untitled section of their own — see §2 — right after the
@@ -317,7 +321,7 @@ and scales via CSS width, so one code path serves desktop and mobile.
 | `.viz-bar--dim` | Applied to a bar/area/label when its legend entry is toggled off, or (leaderboard split modes only) to every row whose operator isn't in the "Compare operators" set — segment colors there are fixed to channel/vertical identity, not operator identity, so dimming the whole row is how those modes show emphasis instead |
 | `.viz-bar-label` | The value printed at the end of a bar (the row's total, i.e. sum of its segments) — optionally followed by `(N%)` when an item carries a `note` (e.g. the single-month Market trend breakdown adds each vertical's % of the total alongside its € figure). `renderBarChart` widens its own right margin (`marginR`, 64px → 130px) whenever any item has a `note`, since the longer combined text overflowed past the card's own edge at the old margin — the SVG doesn't clip content by default |
 | `.viz-bar-category-label` | The row's category name to the left of a bar — an operator name for the Operator leaderboard, but `renderBarChart` (`js/charts.js`) is generic: any caller can hand it `{ operator: <any label>, segments }` rows and pass `categoryLabel`/`chartLabel` to relabel the axis/table/aria-text for what those rows actually are. Left-aligned (`text-anchor: start`) at the card's left edge, not right-aligned against the bar — a right-aligned shared column left a dead gap before any label shorter than the longest one in the set (e.g. "Casino" next to "Horse Racing Fixed Odds"); left-aligned, that same slack falls after the label instead, reading as normal column spacing rather than a gap. Its column width (`labelColW`) is still sized to the longest label actually present (capped at the same width the old fixed constant used), so the bars all still start at one consistent x regardless of alignment |
-| `.viz-diverging-bar` + `--pos` / `--neg` | Bars in `renderDivergingBarChart` (Growth by vertical/channel, `js/charts.js`) — grow left/right from a center 0% line instead of from a shared left edge. `--pos`/`--neg` carry `--delta-good`/`--delta-bad`, not a categorical hue: growth direction is a *state* (growing vs. shrinking), and the dataviz color rule for a series that means good/bad is "wears status/delta tokens, never categorical," so it reuses the exact pair the KPI tiles already use for the same meaning rather than a fresh diverging pair |
+| `.viz-diverging-bar` + `--pos` / `--neg` | Bars in `renderDivergingBarChart` (Growth by operator/vertical/channel, `js/charts.js`) — grow left/right from a center 0% line instead of from a shared left edge. `--pos`/`--neg` carry `--delta-good`/`--delta-bad`, not a categorical hue: growth direction is a *state* (growing vs. shrinking), and the dataviz color rule for a series that means good/bad is "wears status/delta tokens, never categorical," so it reuses the exact pair the KPI tiles already use for the same meaning rather than a fresh diverging pair. When a `metric` is passed, its tooltip and table also carry the two raw values behind the %, not just the delta — "Prior month"/"Same month last year" and "New" — formatted with `formatMetric`; the accessible table gains two columns for the same reason the single-month bar chart's `note` does (below): the % alone doesn't tell you whether it moved from a large base or a tiny one |
 | `.viz-bar-label--good` / `--bad` | Growth-chart value-label ink, same `--delta-good`/`--delta-bad` pair as the bars — every value also carries its own `+`/`-` sign, which is the required label pairing for a state/status color (never color alone) |
 | `.viz-cell` | One heatmap cell (vertical × channel) |
 | `.viz-cell-label` | The value text inside a cell |
@@ -396,6 +400,17 @@ and don't have that long-tail problem.
 | `.tooltip__row-label` / `.tooltip__row-value` | Series name (secondary weight) / its value (bold — values lead, labels follow) |
 | `.viz-table-wrap` | Horizontal-scroll wrapper around a table-view `<table>` |
 | `.viz-table` | The table itself (the accessibility twin of every chart) |
+
+`renderTimeSeriesChart` accepts an optional `secondaryMetric` (plus a
+per-series `secondaryValues` array parallel to `values`) so a chart whose
+*plotted* axis is a percentage can still say what that percentage is a
+share *of* — Market trend by vertical and Operator share both always plot
+%, but the underlying € figure (GGR or Turnover, whichever the relevant
+basis toggle is set to) would otherwise only live in the raw data, not
+anywhere the reader can see it. Both charts combine the two into one string
+— `"€122M (41.9%)"` — in the tooltip row and the table cell alike, rather
+than a separate row/column per number: the % is a share *of* that €
+figure, not a second independent quantity worth its own line.
 
 ---
 
