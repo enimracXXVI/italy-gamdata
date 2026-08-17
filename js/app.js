@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608171833";
-import * as Agg from "./aggregate.js?v=202608171833";
-import * as Charts from "./charts.js?v=202608171833";
-import * as Quality from "./quality.js?v=202608171833";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171833";
+} from "./data.js?v=202608171847";
+import * as Agg from "./aggregate.js?v=202608171847";
+import * as Charts from "./charts.js?v=202608171847";
+import * as Quality from "./quality.js?v=202608171847";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171847";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -171,6 +171,14 @@ function setupAuth(onAuthorized) {
 
   window.google.accounts.id.initialize({
     client_id: GOOGLE_CLIENT_ID,
+    // ID tokens are short-lived by design (about an hour) — there's
+    // nothing to save across a reload, the right way to "stay signed in"
+    // is asking Google to silently re-issue a fresh one on load if there's
+    // still an active Google session and the visitor picked an account
+    // here before. `auto_select` is what makes that re-check silent
+    // (no click, sometimes not even the One Tap banner) instead of
+    // requiring "Login" again every single page load.
+    auto_select: true,
     callback: async (response) => {
       currentIdToken = response.credential;
       const check = await backendGet({ action: "check", idToken: currentIdToken }).catch(() => ({ authorized: false, email: null }));
@@ -193,6 +201,9 @@ function setupAuth(onAuthorized) {
   // label text out of a library whose own `renderButton` only offers a
   // fixed set of preset strings, none of which is literally "Login".
   window.google.accounts.id.renderButton(overlay, { type: "standard", theme: "outline", size: "medium", text: "signin", width: 90 });
+  // Attempt the silent re-sign-in described above on every load, not just
+  // in response to a click.
+  window.google.accounts.id.prompt();
 }
 
 function updateQualityBadge(checks) {

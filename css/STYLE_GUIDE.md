@@ -439,6 +439,14 @@ after that cap. The horizontal-scroll-plus-minimum-width layout only
 kicks back in once there are enough categories that even the minimum
 doesn't fit the card.
 
+`marginR` equals `marginL` (both absorb the label-sweep buffer), not a
+small fixed value — with only `marginL` padded, the SVG's own box was
+centering correctly but the *bars inside it* weren't, since all the
+padding sat on one side. Visually this read as "the whole chart is
+shifted right," which is a real bug centering the outer box alone
+can't fix, since the outer box was already exactly centered — the
+content inside it was the part that was off-center.
+
 **`renderDivergingBarChart` actually has two layouts, columns and rows**,
 picked automatically by item count (`ROW_LAYOUT_THRESHOLD = 10` in
 `charts.js`) — not a caller-supplied flag, since the right layout is a
@@ -606,6 +614,18 @@ than it is.
 | `.auth-login-wrap` | `position: relative` wrapper holding both halves of the sign-in control |
 | `.auth-login-btn` | The visible "Login" pill — a plain decorative `<span>`, not a real button. Styled to match `.filter-trigger` |
 | `.auth-google-overlay` | Google's own rendered sign-in button, `position: absolute; inset: 0; opacity: 0`, stacked on top of `.auth-login-btn`. A real click lands on Google's actual interactive element (satisfying whatever "was this a genuine user gesture" checks the sign-in flow does), while the visitor only ever sees "Login" — `renderButton`'s own `text` option is a fixed enum (`signin_with` / `signup_with` / `continue_with` / `signin`) with nothing that reads as plain "Login", so this overlay trick is what gets that exact label |
+
+**Staying signed in across a reload isn't done by saving the ID token.**
+Google ID tokens are short-lived (about an hour) by design, so persisting
+one in `localStorage` and reusing it later isn't the intended pattern —
+it would just start silently failing once it expired. The actual fix is
+`initialize({ ..., auto_select: true })` plus calling `prompt()` on every
+load in `setupAuth()`: if there's still an active Google session and the
+visitor picked an account here before, Google re-issues a fresh token
+and fires the callback on its own, often with no visible UI at all
+(occasionally a small One Tap banner if silent reuse isn't possible for
+that browser/cookie state) — reload-proof without the app ever handling
+a stored credential itself.
 
 ---
 

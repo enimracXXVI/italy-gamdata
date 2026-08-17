@@ -687,8 +687,14 @@ function renderDivergingColumns(body, items, { chartLabel, metric, previousLabel
   // too-small marginB gets silently clipped rather than scrolled to.
   const longestLabel = Math.max(...items.map((it) => truncate(String(it.key ?? "")).length), 1);
   const labelSweep = Math.round(longestLabel * 6.5 * Math.SQRT1_2);
+  // marginR mirrors marginL (both absorb the same label-sweep buffer)
+  // rather than a small fixed value — with only marginL padded, the bars
+  // themselves sat off-center *inside* the SVG's own box (all the extra
+  // room was on the left), so even correctly centering that whole box
+  // within the card (`.viz-scroll-x--center`, below) still left the
+  // visible bars looking shifted right of the card's actual center.
   const marginL = 14 + labelSweep;
-  const marginR = 10, marginT = 26, marginB = 32 + labelSweep;
+  const marginR = marginL, marginT = 26, marginB = 32 + labelSweep;
   const plotH = 170;
 
   // Columns default to their minimum width, but a card with only 1-2
