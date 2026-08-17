@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608170956";
-import * as Agg from "./aggregate.js?v=202608170956";
-import * as Charts from "./charts.js?v=202608170956";
-import * as Quality from "./quality.js?v=202608170956";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608170956";
+} from "./data.js?v=202608171332";
+import * as Agg from "./aggregate.js?v=202608171332";
+import * as Charts from "./charts.js?v=202608171332";
+import * as Quality from "./quality.js?v=202608171332";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171332";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -285,7 +285,7 @@ function renderQualityTab(checks) {
   root.appendChild(buildQualitySection(
     checks,
     "Extreme margins",
-    "GGR ÷ Turnover beyond ±50%, restricted to rows with at least €5,000 of GGR so a tiny operator's small-number noise doesn't drown out real typos (a missing digit on Turnover is the usual cause).",
+    "GGR ÷ Turnover that's implausible for its direction: negative (players ahead) only flagged once Turnover is over €1M, so a small operator's ordinary bad month doesn't drown out real typos; positive only flagged above 100% (GGR bigger than Turnover), which shouldn't happen at all.",
     checks.extremeMargins,
     ["Month", "Operator", "Vertical", "Channel", "GGR", "Turnover", "Margin"],
     (r) => `margin:${r.monthKey}:${r.operator}:${r.vertical}:${r.channel}`,

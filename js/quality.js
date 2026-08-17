@@ -27,16 +27,26 @@ export function duplicateGroups(records) {
     .sort((a, b) => b.monthKey.localeCompare(a.monthKey) || a.operator.localeCompare(b.operator));
 }
 
-/** Rows whose GGR/Turnover ratio is implausible AND whose GGR is large
- * enough to matter — a tiny operator with €10 turnover swinging to a wild
- * ratio is just small-number noise, not a data error worth chasing. */
-export function extremeMarginRows(records, { marginThreshold = 0.5, minAbsGGR = 5000 } = {}) {
+/** Rows whose GGR/Turnover ratio is implausible — negative and positive
+ * margins are implausible in different ways, so they get different gates
+ * rather than one symmetric ±threshold. A negative margin (players came out
+ * ahead) is only worth flagging once real money is behind it — small
+ * operators dip negative on ordinary variance; a large one shouldn't stay
+ * negative for a full month. A positive margin only gets implausible once
+ * it's above 100% (GGR bigger than Turnover), which shouldn't be possible
+ * at all outside a data error. */
+export function extremeMarginRows(records, { negativeMinTurnover = 1_000_000, positiveMarginThreshold = 1 } = {}) {
   const out = [];
   for (const r of records) {
     if (!r.turnover) continue;
     const margin = r.ggr / r.turnover;
-    if (Math.abs(margin) < marginThreshold) continue;
-    if (Math.abs(r.ggr) < minAbsGGR) continue;
+    if (margin < 0) {
+      if (r.turnover <= negativeMinTurnover) continue;
+    } else if (margin > 0) {
+      if (margin <= positiveMarginThreshold) continue;
+    } else {
+      continue;
+    }
     out.push({
       monthLabel: `${r.monthName} ${r.year}`, monthKey: r.key,
       operator: r.operator, vertical: r.vertical, channel: r.channel,
