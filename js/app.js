@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608171332";
-import * as Agg from "./aggregate.js?v=202608171332";
-import * as Charts from "./charts.js?v=202608171332";
-import * as Quality from "./quality.js?v=202608171332";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171332";
+} from "./data.js?v=202608171408";
+import * as Agg from "./aggregate.js?v=202608171408";
+import * as Charts from "./charts.js?v=202608171408";
+import * as Quality from "./quality.js?v=202608171408";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171408";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -142,6 +142,7 @@ function updateQualityBadge(checks) {
     ...checks.extremeMargins.map((r) => `margin:${r.monthKey}:${r.operator}:${r.vertical}:${r.channel}`),
     ...checks.blankTurnovers.map((r) => `blank:${r.monthKey}:${r.operator}:${r.vertical}:${r.channel}`),
     ...checks.groupInconsistencies.map((g) => `group:${g.operator}`),
+    ...checks.presenceGaps.map((g) => `gap:${g.operator}:${g.vertical}:${g.channel}`),
   ].filter((k) => !dismissedKeys.has(k)).length;
 
   const btn = document.getElementById("tab-btn-quality");
@@ -258,6 +259,7 @@ function renderQualityTab(checks) {
     ["Extreme margin outliers", checks.extremeMargins.length],
     ["Blank turnover, non-zero GGR", checks.blankTurnovers.length],
     ["Operator naming inconsistencies", checks.groupInconsistencies.length],
+    ["Missing months in a regular run", checks.presenceGaps.length],
   ];
   for (const [label, value] of tiles) {
     const tile = document.createElement("div");
@@ -285,7 +287,7 @@ function renderQualityTab(checks) {
   root.appendChild(buildQualitySection(
     checks,
     "Extreme margins",
-    "GGR ÷ Turnover that's implausible for its direction: negative (players ahead) only flagged once Turnover is over €1M, so a small operator's ordinary bad month doesn't drown out real typos; positive only flagged above 100% (GGR bigger than Turnover), which shouldn't happen at all.",
+    "GGR ÷ Turnover that's implausible for its direction: negative (players ahead) only flagged once Turnover is over €1M and the loss is -50% or worse, so an ordinary bad month doesn't drown out real typos; positive only flagged above 100% (GGR bigger than Turnover), which shouldn't happen at all.",
     checks.extremeMargins,
     ["Month", "Operator", "Vertical", "Channel", "GGR", "Turnover", "Margin"],
     (r) => `margin:${r.monthKey}:${r.operator}:${r.vertical}:${r.channel}`,
@@ -310,6 +312,16 @@ function renderQualityTab(checks) {
     ["Operator", "Group names seen"],
     (g) => `group:${g.operator}`,
     (g) => [g.operator, g.variants.map((v) => `${v.name} (${v.count} rows, from ${v.firstSeen})`).join("   /   ")]
+  ));
+
+  root.appendChild(buildQualitySection(
+    checks,
+    "Missing months in a regular run",
+    "An operator/vertical/channel that's reported in 95%+ of the months between its own first and last appearance, but skipped one in the middle — as opposed to a combo that simply hasn't launched yet or has permanently stopped, neither of which is an error. August/September 2022 don't count against anyone: ADM's own reporting had a market-wide gap those two months.",
+    checks.presenceGaps,
+    ["Operator", "Vertical", "Channel", "Presence", "Missing months"],
+    (g) => `gap:${g.operator}:${g.vertical}:${g.channel}`,
+    (g) => [g.operator, g.vertical, g.channel, `${g.presentCount}/${g.totalCount} (${Charts.formatPercent(g.presenceRate)})`, g.missingMonths.join(", ")]
   ));
 }
 
