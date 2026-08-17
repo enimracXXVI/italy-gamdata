@@ -146,7 +146,15 @@ export function createMultiSelect({ label, options, selected, max, onChange }) {
       // unfiltered, which looks exactly like "search does nothing" — cheap
       // insurance even though callers are expected to pass strings.
       row.hidden = q.length > 0 && !String(opt.label ?? "").toLowerCase().includes(q);
-      const atCap = max && selected.size >= max && !selected.has(opt.key);
+      // Coerced to a real boolean, never left as `undefined`: when `max`
+      // isn't set (Vertical, Channel — no cap), `max && ...` short-circuits
+      // to `undefined`, and `classList.toggle(cls, undefined)` doesn't mean
+      // "force false" the way it looks like it should — browsers treat a
+      // literal `undefined` force as "no force given" and fall back to a
+      // blind toggle, flipping the class on every single call regardless of
+      // whether anything was actually at its cap. That's what was greying
+      // out Vertical/Channel options and giving them a not-allowed cursor.
+      const atCap = !!(max && selected.size >= max && !selected.has(opt.key));
       checkbox.disabled = atCap;
       checkbox.checked = selected.has(opt.key);
       row.classList.toggle("filter-option--disabled", atCap);

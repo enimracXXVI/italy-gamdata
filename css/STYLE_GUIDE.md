@@ -105,7 +105,7 @@ every one of these classes going forward.
 | `.status-banner__title` | Bold first line of the banner | same |
 | `.app-main` | Centered column, holds both tab panels | `index.html` `<main>` |
 | `.tab-panel` | One of the two top-level views (`#tab-panel-dashboard`, `#tab-panel-quality`); flex column with the section gap `.app-main` used to provide directly before the tabs existed | same |
-| `.dashboard-section` | One titled block ("Market overview", "Operator compare", and every Data Quality check) | same |
+| `.dashboard-section` | One block, usually titled ("Market overview", "Operator compare", every Data Quality check) — the exception is the Growth cards' own section, deliberately untitled: it used to open with "Market overview"'s title+subtitle, which described the *next* section's charts, not these ones, so that heading moved down to sit directly above Market trend/Operator share instead of being deleted | same |
 | `#section-compare` | id on the "Operator compare" section specifically — `app.js` sets its `hidden` attribute directly (`state.operators.size === 0`) each render. Three chart cards all showing the same "pick an operator to see this" placeholder at once read as dead space to scroll past, so the section collapses entirely instead until a pick is made | `index.html`, `app.js render()` |
 | `.section-title` / `.section-subtitle` | Section heading + one-line description | same |
 
@@ -128,7 +128,7 @@ range first, then dimension filters, then the metric toggle, then reset.
 | `.filter-search` | Text input at the top of a popover with >8 options (Vertical, Operator) |
 | `.filter-option-list` | Scrollable list of checkboxes inside a popover. `overscroll-behavior: contain` stops scrolling past its own top/bottom from "chaining" into a scroll of the page underneath (same fix applied to the mobile sheet's own `#filter-bar` scroll) |
 | `.filter-option` | One checkbox row |
-| `.filter-option--disabled` | Dimmed state once a `max` cap (operators: 6) is reached |
+| `.filter-option--disabled` | Dimmed state once a `max` cap (operators: 6) is reached. `updateOptionStates` (`js/components.js`) coerces the underlying `atCap` check to a real boolean (`!!(...)`) before handing it to `classList.toggle(cls, atCap)` — for an uncapped control (Vertical, Channel: no `max`), `max && …` short-circuits to `undefined`, and passing a literal `undefined` as `classList.toggle`'s second argument does **not** behave like `force: false` the way it reads; real browsers treat it as "no force given" and fall back to a blind toggle, flipping the class on every call regardless of whether anything was actually capped. That's what greyed out Vertical/Channel options with a not-allowed cursor even though nothing was ever at a cap |
 | `.filter-option__swatch` | Small color square before a vertical/operator name, tied to its `series-N` |
 | `.filter-option__label` | The option's text, ellipsis-truncated if too long |
 | `.filter-option__meta` | Secondary text after the label (operator's group name) |
@@ -172,8 +172,8 @@ the `urlParams` block in `boot()`), via `history.replaceState` — no history
 spam, just live-updates the current entry. Covers date range, verticals,
 channels, compare-operators (in selection order, so a shared link reproduces
 the same colors), the metric toggle, the Operator-share GGR/Turnover basis
-and Stacked/Lines view, the leaderboard split mode, each Growth card's
-MoM/YoY toggle, and the active tab. Read back on load with
+and Stacked/Lines view, the leaderboard split mode, the shared Growth-cards
+MoM/YoY period, and the active tab. Read back on load with
 validation against the current dataset (unknown month keys / operator names
 / enum values fall back to defaults instead of throwing — protects against a
 stale link after the sheet's shape changes). `createDateRangeControl` was
@@ -255,31 +255,41 @@ share's Stacked/Lines toggle is disabled (with a `title` explaining why) in
 this state, since neither mode means anything for a single data point.
 
 **"Growth by operator," "Growth by vertical," and "Growth by channel"**
-(`js/app.js`, first three cards in "Market overview" — MoM/YoY is the
-headline read of this dashboard, so they lead the section, above the
-volume/composition charts) always show something regardless of whether any
+(`js/app.js`, an untitled section of their own — see §2 — right after the
+KPI row and before "Market overview") lead the dashboard: MoM/YoY is its
+headline read. They always show something regardless of whether any
 operator is selected in "Compare operators" — that section is a separate
 concern (hand-picked per-operator trend over time), while these are
 market-wide "who/what is actually moving right now" questions. Growth by
 operator ranks by GGR within the current filters, top 15 — same convention
 as the Operator leaderboard further down, not tied to which operators (if
-any) are picked in "Compare operators." All three are always GGR-based (a
-local MoM/YoY toggle, not the page metric toggle — same reasoning as the
-Year-over-year KPI tile: Margin %/Share % aren't quantities you take a
-period-over-period delta of). Fixing the default date range to "Last
-month" (above) surfaced a real bug in `momPercent`: it used to compute
-"latest vs. prior" only from months inside the *currently selected
-range* — fine when the default was "All time," but with a one-month range
-there's no second month in range to compare against, so every MoM figure
-(including the existing top KPI tiles, not just these cards) silently went
-blank. `momPercent` now takes a scope predicate and looks at the actual
-preceding calendar month directly via `allMonths`/`records`, the same way
+any) are picked in "Compare operators."
+
+All three share **one MoM/YoY period** (`state.growthPeriod`) — each card
+still gets its own `createSegmented` toggle instance (`growthPeriodToggle()`
+in `js/app.js`, called once per card), consistent with every other card's
+local-controls pattern, but all three read/write the same state field, so
+clicking any one re-renders all three in sync. They also follow the
+page-wide metric toggle (GGR/Turnover/Margin %/Market share %), same as
+every other chart — this used to be hardcoded to GGR, which was the wrong
+call; the fix is `metricValueAt(monthKey, metric, scope, totalScope)`, a
+small helper `momPercent`/`yoyPercent` both go through now. Every metric but
+"share" is a straight `Agg.sum` over the matching records; "share" isn't a
+raw record field at all — it's the category's own GGR as a percentage of a
+*wider* total's GGR at that month, so it needs a second scope
+(`totalScope`, defaulting to the page-wide vertical/channel filters) to know
+what that wider total is.
+
+Fixing the default date range to "Last month" surfaced a real bug in
+`momPercent`: it used to compute "latest vs. prior" only from months inside
+the *currently selected range* — fine when the default was "All time," but
+with a one-month range there's no second month in range to compare against,
+so every MoM figure (including the top KPI tiles, not just these cards)
+silently went blank. `momPercent` now looks at the actual preceding
+calendar month directly via `allMonths`/`records`, the same way
 `yoyPercent` already looked at the actual same month last year — the
 "latest" side still respects the date range, only the comparison anchor
-doesn't, matching `yoyPercent`'s existing behavior exactly. Same
-`momScope`/`yoyScope` predicate pattern powers all three cards: default
-scope is the page-wide vertical/channel filters, and each row narrows it to
-just that one operator, vertical, or channel.
+doesn't.
 
 ---
 
