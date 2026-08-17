@@ -10,9 +10,9 @@
 // > Web app, "Execute as: Me", "Who has access: Anyone". Copy the
 // resulting URL into js/app.js.
 
-const ALLOWLIST_SHEET = "Allowlist"; // one column: Email
-const DISMISSED_SHEET = "Dismissed"; // three columns: Key, DismissedAt, DismissedBy
-const CLIENT_ID = "REPLACE_WITH_YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com";
+const ALLOWLIST_SHEET = "allowlist"; // one column: email
+const DISMISSED_SHEET = "dismissed"; // three columns: key, dismissedAt, dismissedBy
+const CLIENT_ID = "1083340803022-d7t4cj6hnglmrdm2pjthlid8phu74p3e.apps.googleusercontent.com";
 
 function doGet(e) {
   const action = e.parameter.action;

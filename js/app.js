@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608171753";
-import * as Agg from "./aggregate.js?v=202608171753";
-import * as Charts from "./charts.js?v=202608171753";
-import * as Quality from "./quality.js?v=202608171753";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171753";
+} from "./data.js?v=202608171833";
+import * as Agg from "./aggregate.js?v=202608171833";
+import * as Charts from "./charts.js?v=202608171833";
+import * as Quality from "./quality.js?v=202608171833";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171833";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -70,6 +70,7 @@ function setupTabs(initialTab, onChange = () => {}) {
   dashboardBtn.addEventListener("click", () => activate("dashboard"));
   qualityBtn.addEventListener("click", () => activate("quality"));
   if (initialTab === "quality") activate("quality");
+  return { activate };
 }
 
 // ---------------------------------------------------------------------------
@@ -122,19 +123,77 @@ function setupFilterSheet() {
 }
 
 // ---------------------------------------------------------------------------
-// Data Quality tab
+// Data Quality tab — gated behind Google sign-in, see setupAuth() below.
+// Dismiss/restore state lives in the same Google Sheet everything else
+// does (via the Apps Script backend), not per-browser localStorage, so
+// one person marking a finding "not an issue" is visible to everyone.
 // ---------------------------------------------------------------------------
 const QUALITY_TABLE_CAP = 300;
-const QUALITY_DISMISS_KEY = "gamdata-quality-dismissed";
+const GOOGLE_CLIENT_ID = "1083340803022-d7t4cj6hnglmrdm2pjthlid8phu74p3e.apps.googleusercontent.com";
+const QUALITY_BACKEND_URL = "https://script.google.com/macros/s/AKfycbwTjuui1IEkkpLUSUvoMKYZFMRW_AJrLbFrd-sJLtmXWhSaHsXqb-Tm-vIIpSK-IwIyAg/exec";
 
-function loadDismissed() {
-  try { return new Set(JSON.parse(localStorage.getItem(QUALITY_DISMISS_KEY) || "[]")); }
-  catch { return new Set(); }
+let currentIdToken = null;
+let dismissedKeys = new Set();
+
+async function backendGet(params) {
+  const res = await fetch(`${QUALITY_BACKEND_URL}?${new URLSearchParams(params).toString()}`);
+  return res.json();
 }
-function saveDismissed(set) {
-  localStorage.setItem(QUALITY_DISMISS_KEY, JSON.stringify([...set]));
+// Sent as text/plain, not application/json — Apps Script Web Apps don't
+// answer CORS preflight requests, and a JSON content type is what
+// triggers the browser to send one. text/plain counts as a "simple"
+// request and skips it; the backend JSON.parses the body regardless of
+// what content type it arrived as.
+async function backendPost(body) {
+  const res = await fetch(QUALITY_BACKEND_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
 }
-const dismissedKeys = loadDismissed();
+
+/** Sign-in gate for the whole Data Quality tab. Nothing quality-related —
+ * not the tab switcher, not the tab content, not `?tab=quality` in the
+ * URL — renders until a signed-in user's email comes back on the
+ * Sheet's "allowlist" tab. `onAuthorized` runs once that's confirmed. */
+function setupAuth(onAuthorized) {
+  const statusEl = document.getElementById("auth-status");
+  const loginWrap = document.getElementById("auth-login-wrap");
+  const overlay = document.getElementById("auth-google-overlay");
+  const tabNav = document.getElementById("tab-nav");
+
+  if (!window.google || !window.google.accounts) {
+    // Google's script didn't load (network hiccup, ad-blocker, offline).
+    // Fail closed: Data Quality just stays unreachable rather than erroring.
+    return;
+  }
+
+  window.google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: async (response) => {
+      currentIdToken = response.credential;
+      const check = await backendGet({ action: "check", idToken: currentIdToken }).catch(() => ({ authorized: false, email: null }));
+      if (!check.authorized) {
+        statusEl.textContent = check.email ? `Signed in as ${check.email}, no Data Quality access` : "Sign-in failed";
+        statusEl.hidden = false;
+        return;
+      }
+      loginWrap.hidden = true;
+      const dismissed = await backendGet({ action: "dismissed" }).catch(() => ({ keys: [] }));
+      dismissedKeys = new Set(dismissed.keys || []);
+      tabNav.hidden = false;
+      onAuthorized();
+    },
+  });
+  // The visible "Login" pill (`.auth-login-btn`) is a plain decorative
+  // span — Google's own button renders invisibly on top of it
+  // (`.auth-google-overlay`, opacity: 0) so a real click lands on Google's
+  // actual interactive element. That's the standard way to get custom
+  // label text out of a library whose own `renderButton` only offers a
+  // fixed set of preset strings, none of which is literally "Login".
+  window.google.accounts.id.renderButton(overlay, { type: "standard", theme: "outline", size: "medium", text: "signin", width: 90 });
+}
 
 function updateQualityBadge(checks) {
   const activeCount = [
@@ -167,11 +226,12 @@ function emptyQualityNote(text) {
 }
 
 /** A quality-check table with a per-row dismiss/restore action. `items` are
- * the raw check results; `keyFn` derives a stable localStorage key per item
- * so "not an issue" survives reloads (the sheet re-generates the same
- * finding every time otherwise); `rowFn` formats one item into display
- * cells. Dismissed rows stay visible but muted, with a "Restore" button —
- * nothing silently disappears without a visible trail back. */
+ * the raw check results; `keyFn` derives a stable key per item, shared via
+ * the backend so "not an issue" survives reloads and is the same for
+ * every user (the sheet re-generates the same finding every time
+ * otherwise); `rowFn` formats one item into display cells. Dismissed rows
+ * stay visible but muted, with a "Restore" button, nothing silently
+ * disappears without a visible trail back. */
 function buildQualitySection(checks, title, subtitle, items, columns, keyFn, rowFn) {
   const section = document.createElement("section");
   section.className = "dashboard-section";
@@ -229,9 +289,10 @@ function buildQualitySection(checks, title, subtitle, items, columns, keyFn, row
     btn.type = "button";
     btn.className = "quality-dismiss-btn";
     btn.textContent = isDismissed ? "Restore" : "Not an issue";
-    btn.addEventListener("click", () => {
-      if (dismissedKeys.has(key)) dismissedKeys.delete(key); else dismissedKeys.add(key);
-      saveDismissed(dismissedKeys);
+    btn.addEventListener("click", async () => {
+      const action = dismissedKeys.has(key) ? "restore" : "dismiss";
+      const result = await backendPost({ idToken: currentIdToken, action, key }).catch(() => null);
+      if (result && result.keys) dismissedKeys = new Set(result.keys);
       renderQualityTab(checks);
       updateQualityBadge(checks);
     });
@@ -345,9 +406,11 @@ async function boot() {
 
   hideStatus();
 
+  // Computing the checks is cheap and doesn't need to wait on sign-in — the
+  // Sheet they're computed from is the same public one the Dashboard tab
+  // already reads. Rendering them (and the tab that shows them) does wait,
+  // in setupAuth() below.
   const qualityChecks = Quality.runAllChecks(records);
-  renderQualityTab(qualityChecks);
-  updateQualityBadge(qualityChecks);
 
   const allMonths = distinctMonths(records);
   const operators = distinctOperators(records);
@@ -410,7 +473,11 @@ async function boot() {
   };
   if (state.from > state.to) { state.from = allMonths[allMonths.length - 1].key; state.to = allMonths[allMonths.length - 1].key; }
 
-  let activeTab = urlTab === "quality" ? "quality" : "dashboard";
+  // Always starts on Dashboard, even if the URL says ?tab=quality — that
+  // param is only honored once setupAuth() below confirms a signed-in,
+  // allowlisted user, so a signed-out visitor pasting that link in gets
+  // the Dashboard, not a glimpse of the Quality tab while it loads.
+  let activeTab = "dashboard";
 
   function syncURL() {
     const params = new URLSearchParams();
@@ -437,8 +504,14 @@ async function boot() {
     window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
   }
 
-  setupTabs(activeTab, (tab) => { activeTab = tab; syncURL(); });
+  const tabs = setupTabs(activeTab, (tab) => { activeTab = tab; syncURL(); });
   setupFilterSheet();
+
+  setupAuth(() => {
+    renderQualityTab(qualityChecks);
+    updateQualityBadge(qualityChecks);
+    if (urlTab === "quality") tabs.activate("quality");
+  });
 
   buildFilterBar();
   render();

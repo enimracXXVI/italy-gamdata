@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Italy Gamdata</title>
-<link rel="stylesheet" href="css/styles.css?v=202608171753">
+<link rel="stylesheet" href="css/styles.css?v=202608171833">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -13,12 +14,17 @@
     <div class="app-header__titles">
       <h1 class="app-header__title">Italy Gamdata</h1>
     </div>
-    <nav class="tab-nav" aria-label="View">
+    <nav class="tab-nav" aria-label="View" id="tab-nav" hidden>
       <button type="button" class="tab-nav__item tab-nav__item--active" id="tab-btn-dashboard" data-tab="dashboard">Dashboard</button>
       <button type="button" class="tab-nav__item" id="tab-btn-quality" data-tab="quality">Data Quality</button>
     </nav>
     <div class="app-header__actions">
       <span class="app-header__updated" id="last-updated"></span>
+      <span class="auth-status" id="auth-status" hidden></span>
+      <div class="auth-login-wrap" id="auth-login-wrap">
+        <span class="auth-login-btn" aria-hidden="true">Login</span>
+        <div class="auth-google-overlay" id="auth-google-overlay"></div>
+      </div>
     </div>
   </div>
 </header>
@@ -87,6 +93,6 @@
 
 <div class="tooltip" id="viz-tooltip" role="tooltip" hidden></div>
 
-<script type="module" src="js/app.js?v=202608171753"></script>
+<script type="module" src="js/app.js?v=202608171833"></script>
 </body>
 </html>

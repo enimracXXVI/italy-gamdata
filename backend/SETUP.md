@@ -8,10 +8,10 @@ and I'll wire up the app.
 
 In the same spreadsheet the dashboard already reads from, add:
 
-**Allowlist** — one column, header `Email`, one approved email per row
+**allowlist** — one column, header `email`, one approved email per row
 below it. This is who can see Data Quality.
 
-**Dismissed** — three columns, headers `Key`, `DismissedAt`, `DismissedBy`.
+**dismissed** — three columns, headers `key`, `dismissedAt`, `dismissedBy`.
 Leave it empty otherwise; the app fills it in.
 
 ## 2. Create the OAuth Client ID

@@ -245,6 +245,37 @@ button { font-family: inherit; }
   white-space: nowrap;
 }
 
+.auth-status {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.auth-login-wrap { position: relative; display: inline-flex; }
+.auth-login-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* The real Google button renders here, invisible but on top, so a click
+   lands on Google's own interactive element (a genuine user gesture,
+   which sign-in flows require) while the visible "Login" pill underneath
+   is purely decorative — the standard way to give a Google sign-in button
+   custom label text the library itself doesn't offer. */
+.auth-google-overlay {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+
 .tab-nav {
   display: inline-flex;
   gap: var(--space-1);

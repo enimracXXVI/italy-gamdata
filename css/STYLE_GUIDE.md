@@ -110,10 +110,12 @@ every one of these classes going forward.
 | `.app-header__row` | Max-width flex row inside the header | same |
 | `.app-header__titles` | Wraps the `<h1>` | same |
 | `.app-header__title` | "Italy Gamdata" — a text placeholder for a future logo, kept short deliberately: it has to share one row with the tab switcher at every width, including narrow phones, rather than wrap or push the switcher to its own line | same |
-| `.tab-nav` / `.tab-nav__item` / `--active` | Dashboard ↔ Data Quality switcher in the header. Same `:not(--active):hover` scoping as the segmented control | header, `app.js` `setupTabs()` |
+| `.tab-nav` / `.tab-nav__item` / `--active` | Dashboard ↔ Data Quality switcher in the header. Same `:not(--active):hover` scoping as the segmented control. Has `hidden` in the HTML by default — `setupAuth()` in `app.js` is what removes it, and only once a signed-in user's email comes back on the Sheet's "allowlist" tab. A signed-out (or non-allowlisted) visitor never sees this switcher exists, and typing `?tab=quality` doesn't reveal it either — see the Data Quality login section below | header, `app.js` `setupTabs()`, `setupAuth()` |
 | `.tab-nav__item-badge` | Small count pill on the "Data Quality" tab button — active (non-dismissed) finding count. Removed entirely when the count is 0 | `app.js` `updateQualityBadge()` |
-| `.app-header__actions` | Right-side cluster (just the last-updated text now) | same |
+| `.app-header__actions` | Right-side cluster: last-updated text, sign-in status, the Login control | same |
 | `.app-header__updated` | "Data through …" text, hidden under 480px | same, set by `app.js` |
+| `.auth-status` | Muted text next to the Login control, shown only for a signed-in-but-not-allowlisted account ("Signed in as x@y.com, no Data Quality access") | `app.js` `setupAuth()` |
+| `.auth-login-wrap` / `.auth-login-btn` / `.auth-google-overlay` | See "Data Quality login" below | same |
 | `.status-banner` + `--loading` / `--error` / `--warning` | Fetch status / data-quality message above the filter bar (`--warning` is the duplicate-rows notice, sourced from `js/quality.js`) | `app.js` `showStatus()` |
 | `.status-banner__title` | Bold first line of the banner | same |
 | `.app-main` | Centered column, holds both tab panels | `index.html` `<main>` |
@@ -555,10 +557,55 @@ from above for its layout — only the dismiss mechanism is new:
 | `.quality-dismiss-btn` | The "Not an issue" / "Restore" button in each finding row's last column |
 
 Dismissal is per-finding, keyed by a stable string (e.g.
-`dup:2026-07:GOLDBET:Casino:Online`) stored in `localStorage` under
-`gamdata-quality-dismissed` — it survives reloads, since the sheet
+`dup:2026-07:GOLDBET:Casino:Online`) — it survives reloads, since the sheet
 re-generates the same finding every time otherwise. The `.tab-nav__item-badge`
 count only counts non-dismissed findings.
+
+**Dismissal state is shared, not per-browser.** It used to live in each
+visitor's own `localStorage`, so one person marking a finding "not an
+issue" meant nothing to anyone else. It now lives in a `dismissed` tab on
+the same Google Sheet the dashboard already reads from, read and written
+through a small Apps Script Web App (`backend/quality-storage.gs`,
+deployment steps in `backend/SETUP.md`) — `backendGet`/`backendPost` in
+`app.js` are the only two functions that talk to it. `backendPost` sends
+its body as `text/plain`, not `application/json` — Apps Script Web Apps
+never answer a CORS preflight request, and a JSON content type is exactly
+what makes the browser send one; `text/plain` counts as a "simple"
+request under the CORS spec and skips it, and the backend
+`JSON.parse`s the body regardless of what content type it arrived
+labeled as.
+
+**Data Quality login.** The whole tab is gated behind Google sign-in —
+not just hidden with CSS, actually never rendered — because dismissal
+state (and the findings themselves) shouldn't be a click away for
+whoever loads the public dashboard. `setupAuth()` in `app.js` wires up
+Google Identity Services: `#tab-nav` carries `hidden` in the HTML by
+default and `setupAuth()` is the only thing that clears it, and only
+after the backend confirms the signed-in email is on the Sheet's
+`allowlist` tab. `?tab=quality` in the URL is captured but deliberately
+not acted on until that same check passes — `boot()` always starts
+`activeTab` at `"dashboard"` regardless of the URL, and only calls
+`tabs.activate("quality")` from inside `setupAuth`'s success callback.
+A signed-out visitor, or a signed-in one whose email isn't on the
+allowlist, gets the Dashboard and nothing that hints Data Quality
+exists — same outcome whether they never noticed the tab or tried the
+URL param directly. The check itself happens once per sign-in (an ID
+token verified server-side against Google's own tokeninfo endpoint,
+inside `quality-storage.gs`), not via anything decidable client-side,
+so there's nothing to spoof by editing local JS or storage.
+
+The underlying rows the checks are computed from are still the same
+public Sheet the Dashboard tab reads either way — this login gate keeps
+the tab out of the app for anyone not approved, it doesn't make that
+data itself secret from someone willing to fetch the sheet's public CSV
+directly. Worth knowing before assuming this is a stronger guarantee
+than it is.
+
+| Class | What it is |
+|---|---|
+| `.auth-login-wrap` | `position: relative` wrapper holding both halves of the sign-in control |
+| `.auth-login-btn` | The visible "Login" pill — a plain decorative `<span>`, not a real button. Styled to match `.filter-trigger` |
+| `.auth-google-overlay` | Google's own rendered sign-in button, `position: absolute; inset: 0; opacity: 0`, stacked on top of `.auth-login-btn`. A real click lands on Google's actual interactive element (satisfying whatever "was this a genuine user gesture" checks the sign-in flow does), while the visitor only ever sees "Login" — `renderButton`'s own `text` option is a fixed enum (`signin_with` / `signup_with` / `continue_with` / `signin`) with nothing that reads as plain "Login", so this overlay trick is what gets that exact label |
 
 ---
 
