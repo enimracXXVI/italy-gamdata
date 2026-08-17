@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608171855";
-import * as Agg from "./aggregate.js?v=202608171855";
-import * as Charts from "./charts.js?v=202608171855";
-import * as Quality from "./quality.js?v=202608171855";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171855";
+} from "./data.js?v=202608171900";
+import * as Agg from "./aggregate.js?v=202608171900";
+import * as Charts from "./charts.js?v=202608171900";
+import * as Quality from "./quality.js?v=202608171900";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171900";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -195,7 +195,7 @@ function setupAuth(onAuthorized) {
         // actual sign-in attempt.
         if (response.select_by !== "auto") {
           deniedBody.textContent = check.email
-            ? `${check.email} doesn't have access to Data Quality.`
+            ? `${check.email} doesn't have admin access.`
             : "Sign-in failed. Try again.";
           deniedBackdrop.hidden = false;
         }
