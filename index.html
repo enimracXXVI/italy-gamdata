@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Italy Gamdata</title>
-<link rel="stylesheet" href="css/styles.css?v=202608171847">
+<link rel="stylesheet" href="css/styles.css?v=202608171855">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -20,7 +20,6 @@
     </nav>
     <div class="app-header__actions">
       <span class="app-header__updated" id="last-updated"></span>
-      <span class="auth-status" id="auth-status" hidden></span>
       <div class="auth-login-wrap" id="auth-login-wrap">
         <span class="auth-login-btn" aria-hidden="true">Login</span>
         <div class="auth-google-overlay" id="auth-google-overlay"></div>
@@ -93,6 +92,14 @@
 
 <div class="tooltip" id="viz-tooltip" role="tooltip" hidden></div>
 
-<script type="module" src="js/app.js?v=202608171847"></script>
+<div class="modal-backdrop" id="auth-denied-backdrop" hidden>
+  <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="auth-denied-title">
+    <h2 class="modal__title" id="auth-denied-title">No Data Quality access</h2>
+    <p class="modal__body" id="auth-denied-body"></p>
+    <button type="button" class="modal__close" id="auth-denied-close">OK</button>
+  </div>
+</div>
+
+<script type="module" src="js/app.js?v=202608171855"></script>
 </body>
 </html>

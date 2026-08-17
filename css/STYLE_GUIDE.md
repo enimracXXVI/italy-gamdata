@@ -112,9 +112,8 @@ every one of these classes going forward.
 | `.app-header__title` | "Italy Gamdata" — a text placeholder for a future logo, kept short deliberately: it has to share one row with the tab switcher at every width, including narrow phones, rather than wrap or push the switcher to its own line | same |
 | `.tab-nav` / `.tab-nav__item` / `--active` | Dashboard ↔ Data Quality switcher in the header. Same `:not(--active):hover` scoping as the segmented control. Has `hidden` in the HTML by default — `setupAuth()` in `app.js` is what removes it, and only once a signed-in user's email comes back on the Sheet's "allowlist" tab. A signed-out (or non-allowlisted) visitor never sees this switcher exists, and typing `?tab=quality` doesn't reveal it either — see the Data Quality login section below | header, `app.js` `setupTabs()`, `setupAuth()` |
 | `.tab-nav__item-badge` | Small count pill on the "Data Quality" tab button — active (non-dismissed) finding count. Removed entirely when the count is 0 | `app.js` `updateQualityBadge()` |
-| `.app-header__actions` | Right-side cluster: last-updated text, sign-in status, the Login control | same |
+| `.app-header__actions` | Right-side cluster: last-updated text, the Login control | same |
 | `.app-header__updated` | "Data through …" text, hidden under 480px | same, set by `app.js` |
-| `.auth-status` | Muted text next to the Login control, shown only for a signed-in-but-not-allowlisted account ("Signed in as x@y.com, no Data Quality access") | `app.js` `setupAuth()` |
 | `.auth-login-wrap` / `.auth-login-btn` / `.auth-google-overlay` | See "Data Quality login" below | same |
 | `.status-banner` + `--loading` / `--error` / `--warning` | Fetch status / data-quality message above the filter bar (`--warning` is the duplicate-rows notice, sourced from `js/quality.js`) | `app.js` `showStatus()` |
 | `.status-banner__title` | Bold first line of the banner | same |
@@ -626,6 +625,25 @@ and fires the callback on its own, often with no visible UI at all
 (occasionally a small One Tap banner if silent reuse isn't possible for
 that browser/cookie state) — reload-proof without the app ever handling
 a stored credential itself.
+
+**A signed-in-but-not-allowlisted account gets a modal, not inline
+text.** A small "Signed in as x@y.com, no Data Quality access" line
+next to the Login button was easy to miss and read as a stray error
+rather than a clear answer. `#auth-denied-backdrop`/`#auth-denied-body`
+in `index.html`, shown from the same `setupAuth()` callback. One
+wrinkle from `auto_select` (above): it can silently re-fire this exact
+callback on every page load for someone who stays signed into a
+non-approved Google account, and popping the modal every single reload
+for that would be worse than what it replaced — so it only shows when
+`response.select_by !== "auto"`, i.e. an actual sign-in action, not a
+silent background re-check.
+
+| Class | What it is |
+|---|---|
+| `.modal-backdrop` | Full-viewport dim layer, centers its `.modal` child with flexbox. Reused for any future modal, not specific to the auth-denied one |
+| `.modal` | The white/dark card itself, `max-width: 360px` |
+| `.modal__title` / `.modal__body` | Heading and message text |
+| `.modal__close` | Full-width accent-filled button — the only way to dismiss it, deliberately no backdrop-click-to-close, so the message has to be actually read and acknowledged rather than reflexively clicked away |
 
 ---
 

@@ -11,11 +11,11 @@
 
 import {
   loadRecords, distinctMonths, distinctOperators, distinctVerticals, CHANNEL_ORDER,
-} from "./data.js?v=202608171847";
-import * as Agg from "./aggregate.js?v=202608171847";
-import * as Charts from "./charts.js?v=202608171847";
-import * as Quality from "./quality.js?v=202608171847";
-import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171847";
+} from "./data.js?v=202608171855";
+import * as Agg from "./aggregate.js?v=202608171855";
+import * as Charts from "./charts.js?v=202608171855";
+import * as Quality from "./quality.js?v=202608171855";
+import { createMultiSelect, createDateRangeControl, createSegmented, createResetButton } from "./components.js?v=202608171855";
 
 const statusBanner = document.getElementById("status-banner");
 const filterBar = document.getElementById("filter-bar");
@@ -158,10 +158,13 @@ async function backendPost(body) {
  * URL — renders until a signed-in user's email comes back on the
  * Sheet's "allowlist" tab. `onAuthorized` runs once that's confirmed. */
 function setupAuth(onAuthorized) {
-  const statusEl = document.getElementById("auth-status");
   const loginWrap = document.getElementById("auth-login-wrap");
   const overlay = document.getElementById("auth-google-overlay");
   const tabNav = document.getElementById("tab-nav");
+  const deniedBackdrop = document.getElementById("auth-denied-backdrop");
+  const deniedBody = document.getElementById("auth-denied-body");
+  const deniedClose = document.getElementById("auth-denied-close");
+  deniedClose.addEventListener("click", () => { deniedBackdrop.hidden = true; });
 
   if (!window.google || !window.google.accounts) {
     // Google's script didn't load (network hiccup, ad-blocker, offline).
@@ -183,8 +186,19 @@ function setupAuth(onAuthorized) {
       currentIdToken = response.credential;
       const check = await backendGet({ action: "check", idToken: currentIdToken }).catch(() => ({ authorized: false, email: null }));
       if (!check.authorized) {
-        statusEl.textContent = check.email ? `Signed in as ${check.email}, no Data Quality access` : "Sign-in failed";
-        statusEl.hidden = false;
+        // `select_by` tells us how this credential got here — "auto" means
+        // `auto_select` silently re-fired this same callback on page load,
+        // not an actual click. Popping the "you're not allowed in" modal
+        // on every single reload for someone who just happens to stay
+        // signed into a non-approved Google account would be worse than
+        // the plain-text message this replaced, so it's reserved for an
+        // actual sign-in attempt.
+        if (response.select_by !== "auto") {
+          deniedBody.textContent = check.email
+            ? `${check.email} doesn't have access to Data Quality.`
+            : "Sign-in failed. Try again.";
+          deniedBackdrop.hidden = false;
+        }
         return;
       }
       loginWrap.hidden = true;
